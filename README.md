@@ -38,10 +38,11 @@ curl -fsSL https://ollama.com/install.sh | sh
 > sudo apt-get update && sudo apt-get install -y zstd
 > ```
 
-### 2. Télécharger le modèle utilisé par le projet
+### 2. Télécharger les modèles utilisés par le projet
 
 ```bash
-ollama pull llama3.2
+ollama pull llama3.2          # modèle de conversation (chat)
+ollama pull nomic-embed-text  # modèle d'embeddings (RAG)
 ```
 
 ### 3. Cloner le repo et créer l'environnement virtuel
@@ -109,6 +110,28 @@ Toi : exit
 À bientôt !
 ```
 
+### Ingérer des documents (RAG)
+
+Place tes fichiers (`.pdf`, `.docx`, `.txt`) dans un dossier (ex: `documents/`), puis :
+
+```python
+from src.ollama_client import OllamaClient
+from src.ingestion import ingest_folder
+from src.storage import init_db, save_chunks, count_chunks
+
+client = OllamaClient()
+conn = init_db()
+
+results = ingest_folder("documents", client)
+
+for filename, chunks in results.items():
+    save_chunks(conn, filename, chunks)
+
+print(count_chunks(conn))  # nombre total de chunks stockés
+```
+
+Chaque document est découpé en chunks, chacun transformé en embedding (vecteur de 768 dimensions via `nomic-embed-text`), puis stocké dans une base SQLite locale (`sensai.db`) aux côtés de son texte d'origine.
+
 ---
 
 ## Fonctionnalités implémentées
@@ -120,6 +143,14 @@ Toi : exit
 - [x] Historique de conversation conservé pendant la session
 - [x] Gestion d'erreurs (modèle indisponible, timeout, connexion coupée, input vide)
 - [x] Modèle sélectionnable via `config.yaml`, sans modification du code
+
+### RAG — Document ingestion pipeline
+
+- [x] Chargement multi-format (`.txt`, `.pdf`, `.docx`)
+- [x] Découpage en chunks avec chevauchement (`chunk_size` / `overlap` configurables)
+- [x] Génération des embeddings via Ollama (`nomic-embed-text`)
+- [x] Stockage persistant dans une base vectorielle locale (SQLite)
+- [x] Ingestion d'un dossier complet avec gestion d'erreur par fichier
 
 ### Fonctionnalités additionnelles
 
@@ -133,10 +164,14 @@ _À venir — voir les [Issues](../../issues) et le [Project board](../../projec
 sensai/
 ├── src/
 │   ├── __init__.py
-│   ├── ollama_client.py   # Client HTTP vers l'API Ollama (streaming, erreurs)
-│   └── cli.py              # Chatbot CLI (Base Loop)
-├── config.yaml              # Configuration (modèle, url, température...)
-├── requirements.txt         # Dépendances Python
+│   ├── ollama_client.py   # Client HTTP vers l'API Ollama (chat streaming, embeddings, erreurs)
+│   ├── cli.py               # Chatbot CLI (Base Loop)
+│   ├── ingestion.py         # Chargement (txt/pdf/docx), chunking, génération des embeddings
+│   └── storage.py           # Stockage/lecture des chunks embeddés en SQLite
+├── documents/                # Documents à ingérer (non versionné)
+├── sensai.db                 # Base SQLite locale (non versionné)
+├── config.yaml                # Configuration (modèle, url, température...)
+├── requirements.txt           # Dépendances Python
 ├── .gitignore
 └── README.md
 ```
