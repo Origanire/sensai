@@ -68,3 +68,23 @@ class OllamaClient:
 
         print()
         return full_response
+
+    def embed(self, text):
+        payload = {
+            "model": "nomic-embed-text",
+            "prompt": text
+        }
+
+        try:
+            response = requests.post(
+                f"{self.url}/api/embeddings",
+                json=payload,
+                timeout=30
+            )
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            print(f"[Erreur] Impossible de générer l'embedding : {e}")
+            return None
+
+        data = response.json()
+        return data["embedding"]
