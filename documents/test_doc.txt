@@ -1,0 +1,1 @@
+Sensai est un projet Epitech qui construit un assistant IA local avec Ollama. Le système utilise plusieurs agents qui collaborent pour vérifier des documents.
