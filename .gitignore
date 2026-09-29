@@ -9,3 +9,7 @@ __pycache__/
 .idea/
 .DS_Store
 *.db
+
+# Documentation Doxygen générée (seul doc/Doxyfile est versionné)
+doc/html/
+doc/latex/

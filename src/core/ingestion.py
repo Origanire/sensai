@@ -1,13 +1,25 @@
+## @file ingestion.py
+# @brief Pipeline d'ingestion de documents : chargement multi-format,
+# chunking avec chevauchement et génération d'embeddings.
+
 import os
 from pypdf import PdfReader
 from docx import Document
 
 
+## @brief Charge le contenu d'un fichier texte brut (.txt).
+#
+# @param path Chemin du fichier.
+# @return Contenu du fichier, décodé en UTF-8.
 def load_txt(path):
     with open(path, "r", encoding="utf-8") as f:
         return f.read()
 
 
+## @brief Extrait le texte d'un fichier PDF, page par page.
+#
+# @param path Chemin du fichier PDF.
+# @return Texte extrait de l'ensemble des pages.
 def load_pdf(path):
     reader = PdfReader(path)
     text = ""
@@ -18,11 +30,20 @@ def load_pdf(path):
     return text
 
 
+## @brief Extrait le texte d'un document Word (.docx).
+#
+# @param path Chemin du fichier DOCX.
+# @return Texte des paragraphes du document.
 def load_docx(path):
     doc = Document(path)
     return "\n".join(p.text for p in doc.paragraphs)
 
 
+## @brief Charge un document selon son extension (.txt, .pdf, .docx).
+#
+# @param path Chemin du fichier.
+# @return Texte complet du document.
+# @exception ValueError Si le format n'est pas supporté.
 def load_document(path):
     ext = os.path.splitext(path)[1].lower()
 
@@ -36,6 +57,12 @@ def load_document(path):
         raise ValueError(f"Format non supporté : {ext} (fichier : {path})")
 
 
+## @brief Découpe un texte en chunks avec chevauchement.
+#
+# @param text Texte à découper.
+# @param chunk_size Taille d'un chunk, en caractères.
+# @param overlap Nombre de caractères repris du chunk précédent.
+# @return Liste de chunks.
 def chunk_text(text, chunk_size=500, overlap=50):
     chunks = []
     start = 0
@@ -48,6 +75,13 @@ def chunk_text(text, chunk_size=500, overlap=50):
 
     return chunks
 
+## @brief Génère l'embedding de chaque chunk via Ollama.
+#
+# Les chunks dont l'embedding échoue sont silencieusement ignorés.
+#
+# @param chunks Liste de chunks (texte brut).
+# @param client Client Ollama utilisé pour les embeddings.
+# @return Liste de dicts {"text", "embedding"}.
 def embed_chunks(chunks, client):
     embedded = []
 
@@ -62,12 +96,29 @@ def embed_chunks(chunks, client):
     return embedded
 
 
+## @brief Pipeline complet d'ingestion d'un fichier : chargement, chunking, embeddings.
+#
+# @param path Chemin du fichier à ingérer.
+# @param client Client Ollama utilisé pour les embeddings.
+# @param chunk_size Taille d'un chunk, en caractères.
+# @param overlap Chevauchement entre chunks consécutifs.
+# @return Liste de chunks embeddés.
 def ingest_file(path, client, chunk_size=500, overlap=50):
     text = load_document(path)
     chunks = chunk_text(text, chunk_size=chunk_size, overlap=overlap)
     return embed_chunks(chunks, client)
 
 
+## @brief Ingest tous les documents supportés d'un dossier.
+#
+# Les fichiers dans des formats non supportés sont ignorés ; l'échec d'un
+# fichier n'interrompt pas l'ingestion des autres.
+#
+# @param folder_path Chemin du dossier à ingérer.
+# @param client Client Ollama utilisé pour les embeddings.
+# @param chunk_size Taille d'un chunk, en caractères.
+# @param overlap Chevauchement entre chunks consécutifs.
+# @return Dict {nom_de_fichier: chunks_embeddés}.
 def ingest_folder(folder_path, client, chunk_size=500, overlap=50):
     supported_ext = (".txt", ".pdf", ".docx")
     results = {}
