@@ -1,11 +1,29 @@
-venv/
-.venv/
+# Created by venv; see https://docs.python.org/3/library/venv.html
+bin/
 env/
+.venv/
+venv
+
+# Python généré
 __pycache__/
 *.pyc
 *.pyo
+lib/
+lib64/
+include/
+lib64
+
+# Secrets / config locale
 .env
+
+# IDE
 .vscode/
 .idea/
+
+# Système
 .DS_Store
-*.db
+
+# Données locales générées par le projet
+sensai.db
+documents/
+*.cfg

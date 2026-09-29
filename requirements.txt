@@ -4,3 +4,5 @@ requests
 pyyaml
 pypdf
 python-docx
+duckduckgo-search
+ddgs
