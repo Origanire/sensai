@@ -1,4 +1,4 @@
-from src.ollama_client import OllamaClient
+from src.core.ollama_client import OllamaClient
 
 
 def main():

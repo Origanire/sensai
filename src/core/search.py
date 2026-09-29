@@ -1,5 +1,5 @@
 import math
-from src.storage import load_all_chunks
+from src.core.storage import load_all_chunks
 
 
 def cosine_similarity(vec_a, vec_b):
