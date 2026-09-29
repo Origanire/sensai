@@ -1,20 +1,44 @@
+## @file ollama_client.py
+# @brief Client HTTP vers l'API Ollama (chat en streaming, embeddings, erreurs).
+
 import requests
 import json
 import yaml
 
 
+## @brief Charge la configuration du projet depuis un fichier YAML.
+#
+# @param path Chemin du fichier de configuration.
+# @return Dictionnaire de configuration (modèle, URL, température...).
 def load_config(path="config.yaml"):
     with open(path, "r") as f:
         return yaml.safe_load(f)
 
 
+## @brief Client HTTP pour l'API Ollama (chat en streaming, embeddings).
 class OllamaClient:
+    ## @brief Initialise le client à partir de la configuration.
+    #
+    # @param config Dictionnaire de configuration ; s'il est None, la
+    #                configuration par défaut est chargée automatiquement.
     def __init__(self, config=None):
         config = config or load_config()
+        ## @brief Nom du modèle Ollama utilisé.
         self.model = config["model"]
+        ## @brief URL locale de l'API Ollama.
         self.url = config["ollama_url"]
+        ## @brief Température du modèle (0 = déterministe, 1 = créatif).
         self.temperature = config.get("temperature", 0.7)
 
+    ## @brief Envoie une conversation au modèle et affiche la réponse en streaming.
+    #
+    # Les tokens sont affichés au fur et à mesure de leur réception, puis
+    # la réponse complète est renvoyée. Les erreurs (Ollama injoignable,
+    # timeout, HTTP, connexion coupée, JSON invalide) sont gérées et
+    # affichées sur la sortie d'erreur.
+    #
+    # @param messages Historique de conversation (liste de dicts "role"/"content").
+    # @return Réponse complète du modèle, ou None en cas d'erreur.
     def chat(self, messages):
         if not messages:
             print("[Erreur] Aucun message à envoyer.")
@@ -69,6 +93,10 @@ class OllamaClient:
         print()
         return full_response
 
+    ## @brief Génère l'embedding d'un texte via le modèle nomic-embed-text.
+    #
+    # @param text Texte à vectoriser.
+    # @return Vecteur d'embedding, ou None en cas d'erreur.
     def embed(self, text):
         payload = {
             "model": "nomic-embed-text",

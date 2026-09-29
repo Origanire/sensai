@@ -178,6 +178,35 @@ sensai/
 
 ---
 
+## Documentation (Doxygen)
+
+La documentation technique est générée avec [Doxygen](https://www.doxygen.nl) à partir des commentaires du code source (`## @brief`, `@param`, `@return`...).
+
+### Générer la documentation
+
+```bash
+# Depuis la racine du projet
+sudo apt-get install doxygen   # si nécessaire
+doxygen doc/Doxyfile
+```
+
+La documentation HTML est ensuite disponible dans `doc/html/index.html`.
+
+| Élément | Rôle |
+|---|---|
+| `doc/Doxyfile` | Configuration Doxygen (versionnée) |
+| `doc/README.md` | Mode d'emploi de la génération de la documentation |
+| `doc/html/` | Documentation générée (non versionnée) |
+
+### Régénérer proprement
+
+```bash
+rm -rf doc/html
+doxygen doc/Doxyfile
+```
+
+---
+
 ## Gestion des ressources (Ollama)
 
 Ollama peut consommer plusieurs Go de RAM/VRAM pendant qu'un modèle est chargé. Pour éviter qu'il tourne en permanence :

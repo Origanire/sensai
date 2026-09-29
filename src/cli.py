@@ -1,6 +1,15 @@
+## @file cli.py
+# @brief Chatbot CLI : boucle de conversation interactive avec Ollama.
+
 from src.core.ollama_client import OllamaClient
 
 
+## @brief Point d'entrée du chatbot CLI.
+#
+# Boucle de lecture interactive : lit l'entrée utilisateur, envoie
+# l'historique complet au modèle via Ollama et affiche la réponse en
+# streaming. L'historique de conversation est conservé pendant toute
+# la session.
 def main():
     client = OllamaClient()
     messages = []
