@@ -13,4 +13,13 @@ while True:
     buffer += sock.recv(4096).decode("utf-8", errors="replace")
     while "\r\n" in buffer:
         line, buffer = buffer.split("\r\n", 1)
-        print(line)
+
+        if not line.startswith(":") or " PRIVMSG " not in line:
+            continue
+
+        head, separator, text = line[1:].partition(" :")
+        if not separator:
+            continue
+
+        author = head.split("!", 1)[0]
+        print(f"{author} : {text}")
