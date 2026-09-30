@@ -14,6 +14,10 @@ while True:
     while "\r\n" in buffer:
         line, buffer = buffer.split("\r\n", 1)
 
+        if line.startswith("PING"):
+            sock.sendall(b"PONG :tmi.twitch.tv\r\n")
+            continue
+
         if not line.startswith(":") or " PRIVMSG " not in line:
             continue
 
