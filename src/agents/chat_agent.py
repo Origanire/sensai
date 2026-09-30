@@ -18,6 +18,8 @@ if __name__ == "__main__":
 
     client = OllamaClient(config)
     sock = connect(channel)
+    histories = {}
+
     print(f"En écoute sur #{channel}, déclencheur « {trigger} ». Ctrl+C pour quitter.\n")
 
     try:
@@ -26,10 +28,20 @@ if __name__ == "__main__":
             if question is None:
                 continue
 
-            print(f"{message['author']} : {question}")
-            print(f"Sensai : @{message['author']} ", end="", flush=True)
-            client.chat([{"role": "user", "content": question}])
+            author = message["author"]
+            history = histories.setdefault(author, [])
+            history.append({"role": "user", "content": question})
+
+            print(f"{author} : {question}")
+            print(f"Sensai : @{author} ", end="", flush=True)
+            answer = client.chat(history)
             print()
+
+            if answer is None:
+                history.pop()
+                continue
+
+            history.append({"role": "assistant", "content": answer})
     except KeyboardInterrupt:
         pass
     finally:
