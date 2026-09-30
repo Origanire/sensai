@@ -1,4 +1,4 @@
-from src.core.ollama_client import load_config
+from src.core.ollama_client import OllamaClient, load_config
 from src.tools.twitch_chat import connect, messages
 
 
@@ -16,6 +16,7 @@ if __name__ == "__main__":
     channel = config["twitch_channel"]
     trigger = config["twitch_trigger"]
 
+    client = OllamaClient(config)
     sock = connect(channel)
     print(f"En écoute sur #{channel}, déclencheur « {trigger} ». Ctrl+C pour quitter.\n")
 
@@ -24,7 +25,11 @@ if __name__ == "__main__":
             question = match_trigger(message["text"], trigger)
             if question is None:
                 continue
-            print(f"{message['author']} appelle Sensai : {question!r}")
+
+            print(f"{message['author']} : {question}")
+            print(f"Sensai : @{message['author']} ", end="", flush=True)
+            client.chat([{"role": "user", "content": question}])
+            print()
     except KeyboardInterrupt:
         pass
     finally:
