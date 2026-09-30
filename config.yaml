@@ -7,3 +7,7 @@ max_tokens: 1024
 
 # 0 = très déterministe / répétitif, 1 = très créatif / aléatoire
 temperature: 0.7
+
+# Agent chat Twitch
+twitch_channel: kevinaigre
+twitch_trigger: "@sensai"
