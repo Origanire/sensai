@@ -1,3 +1,4 @@
+from src.core.memory import init_memory, load_history, save_message
 from src.core.ollama_client import OllamaClient, load_config
 from src.tools.twitch_chat import connect, messages
 
@@ -17,6 +18,7 @@ if __name__ == "__main__":
     trigger = config["twitch_trigger"]
 
     client = OllamaClient(config)
+    db_connection = init_memory()
     sock = connect(channel)
     histories = {}
 
@@ -29,7 +31,10 @@ if __name__ == "__main__":
                 continue
 
             author = message["author"]
-            history = histories.setdefault(author, [])
+            if author not in histories:
+                histories[author] = load_history(db_connection, author)
+            history = histories[author]
+
             history.append({"role": "user", "content": question})
 
             print(f"{author} : {question}")
@@ -42,7 +47,10 @@ if __name__ == "__main__":
                 continue
 
             history.append({"role": "assistant", "content": answer})
+            save_message(db_connection, author, "user", question)
+            save_message(db_connection, author, "assistant", answer)
     except KeyboardInterrupt:
         pass
     finally:
         sock.close()
+        db_connection.close()
