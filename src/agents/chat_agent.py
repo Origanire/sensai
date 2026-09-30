@@ -1,4 +1,5 @@
 from src.core.ollama_client import load_config
+from src.tools.twitch_chat import connect, messages
 
 
 def match_trigger(text, trigger):
@@ -11,16 +12,20 @@ def match_trigger(text, trigger):
 
 
 if __name__ == "__main__":
-    trigger = load_config()["twitch_trigger"]
+    config = load_config()
+    channel = config["twitch_channel"]
+    trigger = config["twitch_trigger"]
 
-    tests = [
-        "@sensai c'est quoi ce jeu ?",
-        "hey @sensai ça va ?",
-        "@SENSAI salut",
-        "@sensai",
-        "salut tout le monde",
-        "sensai est cool",
-    ]
+    sock = connect(channel)
+    print(f"En écoute sur #{channel}, déclencheur « {trigger} ». Ctrl+C pour quitter.\n")
 
-    for text in tests:
-        print(f"{text!r:32} -> {match_trigger(text, trigger)!r}")
+    try:
+        for message in messages(sock):
+            question = match_trigger(message["text"], trigger)
+            if question is None:
+                continue
+            print(f"{message['author']} appelle Sensai : {question!r}")
+    except KeyboardInterrupt:
+        pass
+    finally:
+        sock.close()
