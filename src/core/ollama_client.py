@@ -93,6 +93,54 @@ class OllamaClient:
         print()
         return full_response
 
+    ## @brief Envoie une conversation au modèle et renvoie la réponse sans l'afficher.
+    #
+    # Contrairement à chat(), l'appel n'est pas en streaming et rien n'est
+    # écrit sur la sortie standard. Destiné aux appels internes des agents
+    # (extraction, reformulation, classification) dont le résultat ne doit
+    # pas apparaître dans l'interface utilisateur.
+    #
+    # @param messages Historique de conversation (liste de dicts "role"/"content").
+    # @param temperature Température à utiliser ; si None, celle de la config.
+    # @return Réponse complète du modèle, ou None en cas d'erreur.
+    def chat_silent(self, messages, temperature=None):
+        if not messages:
+            print("[Erreur] Aucun message à envoyer.")
+            return None
+
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "stream": False,
+            "options": {
+                "temperature": self.temperature if temperature is None else temperature
+            }
+        }
+
+        try:
+            response = requests.post(
+                f"{self.url}/api/chat",
+                json=payload,
+                timeout=60
+            )
+            response.raise_for_status()
+        except requests.exceptions.ConnectionError:
+            print("\n[Erreur] Impossible de joindre Ollama. Vérifie qu'il est bien lancé (ai-start).")
+            return None
+        except requests.exceptions.Timeout:
+            print("\n[Erreur] Ollama met trop de temps à répondre.")
+            return None
+        except requests.exceptions.HTTPError as e:
+            print(f"\n[Erreur] Ollama a renvoyé une erreur : {e}")
+            return None
+
+        try:
+            return response.json()["message"]["content"]
+        except (json.JSONDecodeError, KeyError):
+            print("\n[Erreur] Réponse invalide reçue d'Ollama.")
+            return None
+
+
     ## @brief Génère l'embedding d'un texte via le modèle nomic-embed-text.
     #
     # @param text Texte à vectoriser.
