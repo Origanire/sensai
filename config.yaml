@@ -11,3 +11,4 @@ temperature: 0.7
 # Agent chat Twitch
 twitch_channel: kevinaigre
 twitch_trigger: "@sensai"
+twitch_remember_command: "retiens"
