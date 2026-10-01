@@ -5,8 +5,10 @@ from src.core.memory import (
     init_memory,
     load_facts,
     load_history,
+    load_summary,
     save_fact,
     save_message,
+    save_summary,
 )
 
 KEEP_RECENT_MESSAGES = 4
@@ -24,6 +26,7 @@ def load_viewer(db_connection, viewer):
     return ViewerState(
         history=load_history(db_connection, viewer),
         facts=load_facts(db_connection, viewer),
+        summary=load_summary(db_connection, viewer),
     )
 
 
@@ -75,7 +78,7 @@ def summarize(client, rules, previous_summary, old_messages):
     return summary.strip() if summary else None
 
 
-def compress(client, rules, state):
+def compress(client, rules, db_connection, viewer, state):
     if len(state.history) <= KEEP_RECENT_MESSAGES:
         return 0
 
@@ -86,6 +89,7 @@ def compress(client, rules, state):
 
     state.summary = summary
     state.history = state.history[-KEEP_RECENT_MESSAGES:]
+    save_summary(db_connection, viewer, summary, len(old_messages))
     return len(old_messages)
 
 
@@ -158,7 +162,9 @@ def main():
             print(f"[tokens] {used}/{token_budget}")
 
             if used is not None and used > token_budget:
-                compressed = compress(client, summary_rules, state)
+                compressed = compress(
+                    client, summary_rules, db_connection, viewer, state
+                )
                 if compressed:
                     print(f"[compress] {compressed} messages summarized")
     finally:
