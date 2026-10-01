@@ -20,6 +20,17 @@ fact_saved_message: "noté."
 # Réponse quand !remember vise un viewer qui n'a jamais écrit dans le chat.
 viewer_not_found_message: "je ne connais pas encore ce viewer."
 
+# Commande qui ajoute un moment fort au compte-rendu du stream
+# (section "moments_forts" de stream_report.json).
+# Usage : !moment <description>
+moment_command: "moment"
+
+# Réponse quand !moment a bien ajouté le moment fort.
+moment_saved_message: "moment fort noté."
+
+# Réponse quand !moment est tapé sans description.
+moment_usage_message: "usage : !moment <description>"
+
 # Taille max de l'historique envoyé au modèle, en tokens.
 # Ollama fait tourner llama3.2 avec 4096 tokens de contexte : il faut
 # laisser de la place pour la réponse (voir max_tokens dans config.yaml).

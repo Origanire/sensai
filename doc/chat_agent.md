@@ -36,6 +36,9 @@ Les réglages de cet agent sont dans `config/chat_agent.yaml`, séparés du
 | `remember_command` | nom de la commande d'enregistrement (`remember`) |
 | `fact_saved_message` | réponse quand un fait a été enregistré |
 | `viewer_not_found_message` | réponse quand le viewer visé est inconnu |
+| `moment_command` | nom de la commande de moment fort (`moment`) |
+| `moment_saved_message` | réponse quand un moment fort a été ajouté |
+| `moment_usage_message` | réponse quand `!moment` est tapé sans description |
 | `history_token_budget` | taille max de l'historique envoyé au modèle |
 
 Le modèle, l'URL d'Ollama et la température restent dans `config.yaml`.
@@ -77,6 +80,20 @@ Réservé au **streamer et aux modérateurs** :
 Un viewer normal qui tape cette commande n'obtient aucune réponse : elle reste
 discrète dans un chat public. Le viewer visé doit avoir écrit au moins une
 fois, sinon son identifiant Twitch est inconnu.
+
+### Noter un moment fort
+
+Réservé au **streamer et aux modérateurs** :
+
+```
+!moment victoire contre Messmer après 37 tentatives
+```
+
+La ligne est ajoutée à la section « Moments forts » de `stream_report.json`,
+précédée de l'heure d'envoi du message (`- 22h15 : victoire contre Messmer…`).
+Le texte est écrit tel quel, sans passer par le modèle. Ces moments servent
+ensuite aux recommandations stratégiques (`src/tools/strategy.py`) une fois
+le compte-rendu archivé.
 
 ---
 

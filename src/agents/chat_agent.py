@@ -7,6 +7,7 @@ import time
 from src.core.ollama_client import OllamaClient, load_config
 from src.core.prompts import load_prompt
 from src.tools.twitch_chat import connect, messages
+from src.tools.report import add_moment
 from src.core.memory import (
     init_memory,
     load_facts,
@@ -300,6 +301,9 @@ def main():
     remember_command = agent_config["remember_command"]
     fact_saved_message = agent_config["fact_saved_message"]
     viewer_not_found_message = agent_config["viewer_not_found_message"]
+    moment_command = agent_config["moment_command"]
+    moment_saved_message = agent_config["moment_saved_message"]
+    moment_usage_message = agent_config["moment_usage_message"]
     token_budget = agent_config["history_token_budget"]
 
     context_template = load_prompt("viewer_context")
@@ -330,13 +334,20 @@ def main():
             command = parse_command(message["text"], command_prefix)
             if command is not None:
                 name, arguments = command
+                author = message["display_name"]
                 if name == remember_command and message["is_moderator"]:
-                    author = message["display_name"]
                     target = remember_about(db_connection, viewers, arguments)
                     if target is None:
                         print(f"Sensai : @{author} {viewer_not_found_message}")
                     else:
                         print(f"Sensai : @{author} {fact_saved_message}")
+                elif name == moment_command and message["is_moderator"]:
+                    if not arguments:
+                        print(f"Sensai : @{author} {moment_usage_message}")
+                    else:
+                        line = add_moment(arguments, message_time(message))
+                        print(f"[moment] {line}")
+                        print(f"Sensai : @{author} {moment_saved_message}")
                 continue
 
             question = match_trigger(message["text"], trigger)

@@ -3,6 +3,7 @@
 
 import json
 import os
+from datetime import datetime
 
 
 ## @brief Sections du compte-rendu et leur contenu par défaut.
@@ -133,6 +134,31 @@ def apply_update(report, update):
         return report
     report[update["section"]] = update["content"]
     return report
+
+
+## @brief Ajoute un moment fort horodaté au compte-rendu.
+#
+# Le texte est écrit tel quel dans la section "moments_forts", sans passer
+# par le modèle : il vient d'un humain (commande !moment), il n'y a donc
+# rien à reformuler ni de section à deviner.
+#
+# @param description Description du moment, telle que tapée dans le chat.
+# @param timestamp Horodatage du moment, en secondes.
+# @param path Chemin du fichier JSON du compte-rendu.
+# @return Ligne ajoutée, par exemple "- 22h15 : victoire contre Messmer".
+def add_moment(description, timestamp, path="stream_report.json"):
+    report = init_report(path)
+    line = f"- {datetime.fromtimestamp(timestamp).strftime('%Hh%M')} : {description}"
+
+    # Le texte par défaut est remplacé par le premier moment, pas complété
+    current = report.get("moments_forts", DEFAULT_SECTIONS["moments_forts"])
+    if current == DEFAULT_SECTIONS["moments_forts"]:
+        report["moments_forts"] = line
+    else:
+        report["moments_forts"] = current + "\n" + line
+
+    save_report(report, path)
+    return line
 
 
 ## @brief Met à jour le compte-rendu à partir d'un événement du stream.
