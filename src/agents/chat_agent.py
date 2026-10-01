@@ -20,6 +20,20 @@ SUMMARY_RULES = (
 )
 
 
+class ViewerState:
+    def __init__(self, history, facts, summary=None):
+        self.history = history
+        self.facts = facts
+        self.summary = summary
+
+
+def load_viewer(db_connection, viewer):
+    return ViewerState(
+        history=load_history(db_connection, viewer),
+        facts=load_facts(db_connection, viewer),
+    )
+
+
 def match_trigger(text, trigger):
     lowered = text.lower()
     position = lowered.find(trigger.lower())
@@ -38,24 +52,24 @@ def parse_remember_command(question, command):
     return fact or None
 
 
-def build_prompt(facts, summary, history):
+def build_prompt(state):
     blocks = []
 
-    if facts:
-        known = "\n".join(f"- {fact}" for fact in facts)
+    if state.facts:
+        known = "\n".join(f"- {fact}" for fact in state.facts)
         blocks.append(f"Voici ce que tu sais déjà sur ce viewer :\n{known}")
 
-    if summary:
-        blocks.append(f"Résumé des échanges précédents :\n{summary}")
+    if state.summary:
+        blocks.append(f"Résumé des échanges précédents :\n{state.summary}")
 
     if not blocks:
-        return history
+        return state.history
 
     system = "\n\n".join(blocks) + (
         "\n\nUtilise ces informations si elles sont pertinentes, "
         "sans les répéter inutilement."
     )
-    return [{"role": "system", "content": system}] + history
+    return [{"role": "system", "content": system}] + state.history
 
 
 def summarize(client, previous_summary, old_messages):
@@ -79,7 +93,43 @@ def summarize(client, previous_summary, old_messages):
     return summary.strip() if summary else None
 
 
-if __name__ == "__main__":
+def compress(client, state):
+    if len(state.history) <= KEEP_RECENT_MESSAGES:
+        return 0
+
+    old_messages = state.history[:-KEEP_RECENT_MESSAGES]
+    summary = summarize(client, state.summary, old_messages)
+    if summary is None:
+        return 0
+
+    state.summary = summary
+    state.history = state.history[-KEEP_RECENT_MESSAGES:]
+    return len(old_messages)
+
+
+def remember(db_connection, viewer, state, fact):
+    save_fact(db_connection, viewer, fact)
+    state.facts.append(fact)
+
+
+def answer(client, db_connection, viewer, state, question):
+    state.history.append({"role": "user", "content": question})
+
+    print(f"Sensai : @{viewer} ", end="", flush=True)
+    reply = client.chat(build_prompt(state))
+    print()
+
+    if reply is None:
+        state.history.pop()
+        return None
+
+    state.history.append({"role": "assistant", "content": reply})
+    save_message(db_connection, viewer, "user", question)
+    save_message(db_connection, viewer, "assistant", reply)
+    return reply
+
+
+def main():
     config = load_config()
     channel = config["twitch_channel"]
     trigger = config["twitch_trigger"]
@@ -89,9 +139,7 @@ if __name__ == "__main__":
     client = OllamaClient(config)
     db_connection = init_memory()
     sock = connect(channel)
-    histories = {}
-    profiles = {}
-    summaries = {}
+    viewers = {}
 
     print(f"En écoute sur #{channel}, déclencheur « {trigger} ». Ctrl+C pour quitter.\n")
 
@@ -101,53 +149,36 @@ if __name__ == "__main__":
             if question is None:
                 continue
 
-            author = message["author"]
-            if author not in histories:
-                histories[author] = load_history(db_connection, author)
-                profiles[author] = load_facts(db_connection, author)
-                summaries[author] = None
-            history = histories[author]
+            viewer = message["author"]
+            if viewer not in viewers:
+                viewers[viewer] = load_viewer(db_connection, viewer)
+            state = viewers[viewer]
 
-            print(f"{author} : {question}")
+            print(f"{viewer} : {question}")
 
             fact = parse_remember_command(question, remember_command)
             if fact is not None:
-                save_fact(db_connection, author, fact)
-                profiles[author].append(fact)
-                print(f"Sensai : @{author} c'est noté.")
+                remember(db_connection, viewer, state, fact)
+                print(f"Sensai : @{viewer} c'est noté.")
                 continue
 
-            history.append({"role": "user", "content": question})
-
-            print(f"Sensai : @{author} ", end="", flush=True)
-            answer = client.chat(
-                build_prompt(profiles[author], summaries[author], history)
-            )
-            print()
-
-            if answer is None:
-                history.pop()
+            if answer(client, db_connection, viewer, state, question) is None:
                 continue
 
             used = client.last_prompt_tokens
             print(f"[tokens] {used}/{token_budget}")
 
-            history.append({"role": "assistant", "content": answer})
-            save_message(db_connection, author, "user", question)
-            save_message(db_connection, author, "assistant", answer)
-
             if used is not None and used > token_budget:
-                if len(history) > KEEP_RECENT_MESSAGES:
-                    old_messages = history[:-KEEP_RECENT_MESSAGES]
-                    new_summary = summarize(
-                        client, summaries[author], old_messages
-                    )
-                    if new_summary is not None:
-                        summaries[author] = new_summary
-                        histories[author] = history[-KEEP_RECENT_MESSAGES:]
-                        print(f"[compression] {len(old_messages)} messages résumés")
-    except KeyboardInterrupt:
-        pass
+                compressed = compress(client, state)
+                if compressed:
+                    print(f"[compression] {compressed} messages résumés")
     finally:
         sock.close()
         db_connection.close()
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        pass
