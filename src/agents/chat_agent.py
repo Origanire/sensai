@@ -5,6 +5,7 @@ from src.core.memory import (
     init_memory,
     load_facts,
     load_history,
+    find_viewer_id,
     load_summary,
     remember_viewer,
     save_fact,
@@ -42,13 +43,31 @@ def match_trigger(text, trigger):
     return " ".join(cleaned.split())
 
 
-def parse_remember_command(question, commands):
-    for command in commands:
-        if question.lower().startswith(command.lower()):
-            fact = question[len(command):].strip()
-            if fact:
-                return fact
-    return None
+def parse_command(text, prefix):
+    if not text.startswith(prefix):
+        return None
+
+    name, _, arguments = text[len(prefix):].partition(" ")
+    if not name:
+        return None
+    return name.lower(), arguments.strip()
+
+
+def remember_about(db_connection, viewers, arguments):
+    target, _, fact = arguments.partition(" ")
+    target = target.lstrip("@")
+    fact = fact.strip()
+    if not target or not fact:
+        return None
+
+    viewer_id = find_viewer_id(db_connection, target)
+    if viewer_id is None:
+        return None
+
+    save_fact(db_connection, viewer_id, fact)
+    if viewer_id in viewers:
+        viewers[viewer_id].facts.append(fact)
+    return target
 
 
 def build_prompt(state, template):
@@ -96,11 +115,6 @@ def compress(client, rules, db_connection, viewer_id, state):
     return len(old_messages)
 
 
-def remember(db_connection, viewer_id, state, fact):
-    save_fact(db_connection, viewer_id, fact)
-    state.facts.append(fact)
-
-
 def answer(client, db_connection, viewer_id, state, question, template):
     state.history.append({"role": "user", "content": question})
 
@@ -122,8 +136,10 @@ def main():
     config = load_config()
     channel = config["twitch_channel"]
     trigger = config["twitch_trigger"]
-    remember_commands = config["twitch_remember_commands"]
+    command_prefix = config["twitch_command_prefix"]
+    remember_command = config["twitch_remember_command"]
     ack_message = config["twitch_ack_message"]
+    unknown_viewer_message = config["twitch_unknown_viewer_message"]
     token_budget = config["history_token_budget"]
 
     context_template = load_prompt("viewer_context")
@@ -138,6 +154,18 @@ def main():
 
     try:
         for message in messages(sock):
+            command = parse_command(message["text"], command_prefix)
+            if command is not None:
+                name, arguments = command
+                if name == remember_command and message["is_moderator"]:
+                    author = message["display_name"]
+                    target = remember_about(db_connection, viewers, arguments)
+                    if target is None:
+                        print(f"Sensai : @{author} {unknown_viewer_message}")
+                    else:
+                        print(f"Sensai : @{author} {ack_message}")
+                continue
+
             question = match_trigger(message["text"], trigger)
             if question is None:
                 continue
@@ -156,12 +184,6 @@ def main():
             state = viewers[viewer_id]
 
             print(f"{state.display_name} : {question}")
-
-            fact = parse_remember_command(question, remember_commands)
-            if fact is not None:
-                remember(db_connection, viewer_id, state, fact)
-                print(f"Sensai : @{state.display_name} {ack_message}")
-                continue
 
             reply = answer(
                 client, db_connection, viewer_id, state, question, context_template

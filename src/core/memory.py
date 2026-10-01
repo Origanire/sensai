@@ -118,3 +118,11 @@ def load_summary(db_connection, viewer_id):
         (viewer_id,),
     ).fetchone()
     return row[0] if row else None
+
+
+def find_viewer_id(db_connection, login):
+    row = db_connection.execute(
+        "SELECT viewer_id FROM viewers WHERE LOWER(login) = LOWER(?)",
+        (login,),
+    ).fetchone()
+    return row[0] if row else None
