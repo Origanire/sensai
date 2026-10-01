@@ -14,13 +14,14 @@ command_prefix: "!"
 # Usage : !remember <pseudo> <fait>
 remember_command: "remember"
 
-# Réponse affichée quand un fait a bien été enregistré.
-ack_message: "noté."
+# Réponse quand !remember a bien enregistré le fait.
+fact_saved_message: "noté."
 
-# Réponse affichée quand le viewer visé n'a jamais parlé dans le chat.
-unknown_viewer_message: "je ne connais pas encore ce viewer."
+# Réponse quand !remember vise un viewer qui n'a jamais écrit dans le chat.
+viewer_not_found_message: "je ne connais pas encore ce viewer."
 
 # Taille max de l'historique envoyé au modèle, en tokens.
 # Ollama fait tourner llama3.2 avec 4096 tokens de contexte : il faut
 # laisser de la place pour la réponse (voir max_tokens dans config.yaml).
 history_token_budget: 2500
+

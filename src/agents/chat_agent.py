@@ -1,3 +1,5 @@
+import time
+
 from src.core.ollama_client import OllamaClient, load_config
 from src.core.prompts import load_prompt
 from src.tools.twitch_chat import connect, messages
@@ -6,7 +8,9 @@ from src.core.memory import (
     load_facts,
     load_history,
     find_viewer_id,
+    load_stats,
     load_summary,
+    add_activity,
     remember_viewer,
     save_fact,
     save_message,
@@ -42,6 +46,44 @@ def match_trigger(text, trigger):
         return None
     cleaned = text[:position] + text[position + len(trigger):]
     return " ".join(cleaned.split())
+
+
+def track_activity(activity, viewer_id, seen_at):
+    session = activity.get(viewer_id)
+    if session is None:
+        session = {"first": seen_at, "last": seen_at, "messages": 0}
+        activity[viewer_id] = session
+
+    session["last"] = max(session["last"], seen_at)
+    session["messages"] += 1
+    return session
+
+
+def flush_activity(db_connection, activity):
+    for viewer_id, session in activity.items():
+        add_activity(
+            db_connection,
+            viewer_id,
+            session["first"],
+            session["last"],
+            session["messages"],
+        )
+    activity.clear()
+
+
+def message_time(message):
+    sent_at = message.get("sent_at")
+    if sent_at and sent_at.isdigit():
+        return int(sent_at) // 1000
+    return int(time.time())
+
+
+def format_duration(seconds):
+    hours, rest = divmod(int(seconds), 3600)
+    minutes = rest // 60
+    if hours:
+        return f"{hours}h{minutes:02d}"
+    return f"{minutes}min"
 
 
 def parse_command(text, prefix):
@@ -141,8 +183,8 @@ def main():
     trigger = agent_config["trigger"]
     command_prefix = agent_config["command_prefix"]
     remember_command = agent_config["remember_command"]
-    ack_message = agent_config["ack_message"]
-    unknown_viewer_message = agent_config["unknown_viewer_message"]
+    fact_saved_message = agent_config["fact_saved_message"]
+    viewer_not_found_message = agent_config["viewer_not_found_message"]
     token_budget = agent_config["history_token_budget"]
 
     context_template = load_prompt("viewer_context")
@@ -152,11 +194,24 @@ def main():
     db_connection = init_memory()
     sock = connect(channel)
     viewers = {}
+    activity = {}
 
     print(f"Listening on #{channel}, trigger \"{trigger}\". Ctrl+C to quit.\n")
 
     try:
         for message in messages(sock):
+            viewer_id = message["user_id"]
+            if viewer_id not in activity:
+                remember_viewer(
+                    db_connection,
+                    viewer_id,
+                    message["author"],
+                    message["display_name"],
+                )
+            session = track_activity(
+                activity, viewer_id, message_time(message)
+            )
+
             command = parse_command(message["text"], command_prefix)
             if command is not None:
                 name, arguments = command
@@ -164,29 +219,28 @@ def main():
                     author = message["display_name"]
                     target = remember_about(db_connection, viewers, arguments)
                     if target is None:
-                        print(f"Sensai : @{author} {unknown_viewer_message}")
+                        print(f"Sensai : @{author} {viewer_not_found_message}")
                     else:
-                        print(f"Sensai : @{author} {ack_message}")
+                        print(f"Sensai : @{author} {fact_saved_message}")
                 continue
 
             question = match_trigger(message["text"], trigger)
             if question is None:
                 continue
 
-            viewer_id = message["user_id"]
             if viewer_id not in viewers:
-                remember_viewer(
-                    db_connection,
-                    viewer_id,
-                    message["author"],
-                    message["display_name"],
-                )
                 viewers[viewer_id] = load_viewer(
                     db_connection, viewer_id, message["display_name"]
                 )
             state = viewers[viewer_id]
 
             print(f"{state.display_name} : {question}")
+            total = load_stats(db_connection, viewer_id)
+            print(
+                f"[viewer] {total['visits']} past visits, "
+                f"{session['messages']} messages tonight, "
+                f"{format_duration(session['last'] - session['first'])} active"
+            )
 
             reply = answer(
                 client, db_connection, viewer_id, state, question, context_template
@@ -204,6 +258,7 @@ def main():
                 if compressed:
                     print(f"[compress] {compressed} messages summarized")
     finally:
+        flush_activity(db_connection, activity)
         sock.close()
         db_connection.close()
 

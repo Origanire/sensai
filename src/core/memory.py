@@ -2,6 +2,14 @@ import sqlite3
 
 LEGACY_TABLES = ("viewer_messages", "viewer_facts", "viewer_summaries")
 
+VIEWER_STATS_COLUMNS = (
+    ("first_seen", "INTEGER"),
+    ("last_seen", "INTEGER"),
+    ("visits", "INTEGER NOT NULL DEFAULT 0"),
+    ("message_count", "INTEGER NOT NULL DEFAULT 0"),
+    ("active_seconds", "INTEGER NOT NULL DEFAULT 0"),
+)
+
 
 def rename_legacy_tables(db_connection):
     for table in LEGACY_TABLES:
@@ -11,6 +19,16 @@ def rename_legacy_tables(db_connection):
         if columns and "viewer_id" not in columns:
             db_connection.execute(f"ALTER TABLE {table} RENAME TO {table}_v1")
     db_connection.commit()
+
+
+def add_missing_column(db_connection, table, column, definition):
+    columns = {
+        row[1] for row in db_connection.execute(f"PRAGMA table_info({table})")
+    }
+    if column not in columns:
+        db_connection.execute(
+            f"ALTER TABLE {table} ADD COLUMN {column} {definition}"
+        )
 
 
 def init_memory(path="sensai.db"):
@@ -47,6 +65,9 @@ def init_memory(path="sensai.db"):
             summary TEXT NOT NULL
         )
     """)
+
+    for column, definition in VIEWER_STATS_COLUMNS:
+        add_missing_column(db_connection, "viewers", column, definition)
 
     db_connection.commit()
     return db_connection
@@ -126,3 +147,35 @@ def find_viewer_id(db_connection, login):
         (login,),
     ).fetchone()
     return row[0] if row else None
+
+
+def add_activity(db_connection, viewer_id, first_seen, last_seen, message_count):
+    db_connection.execute(
+        "UPDATE viewers SET "
+        "first_seen = COALESCE(first_seen, ?), "
+        "last_seen = ?, "
+        "visits = visits + 1, "
+        "message_count = message_count + ?, "
+        "active_seconds = active_seconds + ? "
+        "WHERE viewer_id = ?",
+        (first_seen, last_seen, message_count, last_seen - first_seen, viewer_id),
+    )
+    db_connection.commit()
+
+
+def load_stats(db_connection, viewer_id):
+    row = db_connection.execute(
+        "SELECT visits, message_count, active_seconds, first_seen "
+        "FROM viewers WHERE viewer_id = ?",
+        (viewer_id,),
+    ).fetchone()
+    if row is None:
+        return None
+
+    visits, message_count, active_seconds, first_seen = row
+    return {
+        "visits": visits,
+        "message_count": message_count,
+        "active_seconds": active_seconds,
+        "first_seen": first_seen,
+    }
