@@ -149,36 +149,18 @@ def find_viewer_id(db_connection, login):
     return row[0] if row else None
 
 
-def record_activity(db_connection, viewer_id, seen_at, session_gap):
-    row = db_connection.execute(
-        "SELECT last_seen, visits, message_count, active_seconds "
-        "FROM viewers WHERE viewer_id = ?",
-        (viewer_id,),
-    ).fetchone()
-    if row is None:
-        return None
-
-    last_seen, visits, message_count, active_seconds = row
-
-    if last_seen is None or seen_at - last_seen > session_gap:
-        visits += 1
-    elif seen_at > last_seen:
-        active_seconds += seen_at - last_seen
-
-    message_count += 1
-
+def add_activity(db_connection, viewer_id, first_seen, last_seen, message_count):
     db_connection.execute(
-        "UPDATE viewers SET first_seen = COALESCE(first_seen, ?), last_seen = ?, "
-        "visits = ?, message_count = ?, active_seconds = ? WHERE viewer_id = ?",
-        (seen_at, seen_at, visits, message_count, active_seconds, viewer_id),
+        "UPDATE viewers SET "
+        "first_seen = COALESCE(first_seen, ?), "
+        "last_seen = ?, "
+        "visits = visits + 1, "
+        "message_count = message_count + ?, "
+        "active_seconds = active_seconds + ? "
+        "WHERE viewer_id = ?",
+        (first_seen, last_seen, message_count, last_seen - first_seen, viewer_id),
     )
     db_connection.commit()
-
-    return {
-        "visits": visits,
-        "message_count": message_count,
-        "active_seconds": active_seconds,
-    }
 
 
 def load_stats(db_connection, viewer_id):

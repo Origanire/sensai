@@ -25,6 +25,3 @@ viewer_not_found_message: "je ne connais pas encore ce viewer."
 # laisser de la place pour la réponse (voir max_tokens dans config.yaml).
 history_token_budget: 2500
 
-# Au-delà de cet écart entre deux messages d'un viewer, on considère
-# qu'il est parti et revenu : c'est une nouvelle visite.
-session_gap_minutes: 120

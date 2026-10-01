@@ -8,8 +8,9 @@ from src.core.memory import (
     load_facts,
     load_history,
     find_viewer_id,
+    load_stats,
     load_summary,
-    record_activity,
+    add_activity,
     remember_viewer,
     save_fact,
     save_message,
@@ -45,6 +46,29 @@ def match_trigger(text, trigger):
         return None
     cleaned = text[:position] + text[position + len(trigger):]
     return " ".join(cleaned.split())
+
+
+def track_activity(activity, viewer_id, seen_at):
+    session = activity.get(viewer_id)
+    if session is None:
+        session = {"first": seen_at, "last": seen_at, "messages": 0}
+        activity[viewer_id] = session
+
+    session["last"] = max(session["last"], seen_at)
+    session["messages"] += 1
+    return session
+
+
+def flush_activity(db_connection, activity):
+    for viewer_id, session in activity.items():
+        add_activity(
+            db_connection,
+            viewer_id,
+            session["first"],
+            session["last"],
+            session["messages"],
+        )
+    activity.clear()
 
 
 def message_time(message):
@@ -162,7 +186,6 @@ def main():
     fact_saved_message = agent_config["fact_saved_message"]
     viewer_not_found_message = agent_config["viewer_not_found_message"]
     token_budget = agent_config["history_token_budget"]
-    session_gap = agent_config["session_gap_minutes"] * 60
 
     context_template = load_prompt("viewer_context")
     summary_rules = load_prompt("summarize")
@@ -171,20 +194,22 @@ def main():
     db_connection = init_memory()
     sock = connect(channel)
     viewers = {}
+    activity = {}
 
     print(f"Listening on #{channel}, trigger \"{trigger}\". Ctrl+C to quit.\n")
 
     try:
         for message in messages(sock):
             viewer_id = message["user_id"]
-            remember_viewer(
-                db_connection,
-                viewer_id,
-                message["author"],
-                message["display_name"],
-            )
-            stats = record_activity(
-                db_connection, viewer_id, message_time(message), session_gap
+            if viewer_id not in activity:
+                remember_viewer(
+                    db_connection,
+                    viewer_id,
+                    message["author"],
+                    message["display_name"],
+                )
+            session = track_activity(
+                activity, viewer_id, message_time(message)
             )
 
             command = parse_command(message["text"], command_prefix)
@@ -210,10 +235,11 @@ def main():
             state = viewers[viewer_id]
 
             print(f"{state.display_name} : {question}")
+            total = load_stats(db_connection, viewer_id)
             print(
-                f"[viewer] {stats['visits']} visits, "
-                f"{stats['message_count']} messages, "
-                f"{format_duration(stats['active_seconds'])} active"
+                f"[viewer] {total['visits']} past visits, "
+                f"{session['messages']} messages tonight, "
+                f"{format_duration(session['last'] - session['first'])} active"
             )
 
             reply = answer(
@@ -232,6 +258,7 @@ def main():
                 if compressed:
                     print(f"[compress] {compressed} messages summarized")
     finally:
+        flush_activity(db_connection, activity)
         sock.close()
         db_connection.close()
 
