@@ -6,6 +6,7 @@ from src.core.memory import (
     load_facts,
     load_history,
     load_summary,
+    remember_viewer,
     save_fact,
     save_message,
     save_summary,
@@ -16,17 +17,19 @@ NOTHING = "(none)"
 
 
 class ViewerState:
-    def __init__(self, history, facts, summary=None):
+    def __init__(self, history, facts, summary, display_name):
         self.history = history
         self.facts = facts
         self.summary = summary
+        self.display_name = display_name
 
 
-def load_viewer(db_connection, viewer):
+def load_viewer(db_connection, viewer_id, display_name):
     return ViewerState(
-        history=load_history(db_connection, viewer),
-        facts=load_facts(db_connection, viewer),
-        summary=load_summary(db_connection, viewer),
+        history=load_history(db_connection, viewer_id),
+        facts=load_facts(db_connection, viewer_id),
+        summary=load_summary(db_connection, viewer_id),
+        display_name=display_name,
     )
 
 
@@ -78,7 +81,7 @@ def summarize(client, rules, previous_summary, old_messages):
     return summary.strip() if summary else None
 
 
-def compress(client, rules, db_connection, viewer, state):
+def compress(client, rules, db_connection, viewer_id, state):
     if len(state.history) <= KEEP_RECENT_MESSAGES:
         return 0
 
@@ -89,19 +92,19 @@ def compress(client, rules, db_connection, viewer, state):
 
     state.summary = summary
     state.history = state.history[-KEEP_RECENT_MESSAGES:]
-    save_summary(db_connection, viewer, summary, len(old_messages))
+    save_summary(db_connection, viewer_id, summary, len(old_messages))
     return len(old_messages)
 
 
-def remember(db_connection, viewer, state, fact):
-    save_fact(db_connection, viewer, fact)
+def remember(db_connection, viewer_id, state, fact):
+    save_fact(db_connection, viewer_id, fact)
     state.facts.append(fact)
 
 
-def answer(client, db_connection, viewer, state, question, template):
+def answer(client, db_connection, viewer_id, state, question, template):
     state.history.append({"role": "user", "content": question})
 
-    print(f"Sensai : @{viewer} ", end="", flush=True)
+    print(f"Sensai : @{state.display_name} ", end="", flush=True)
     reply = client.chat(build_prompt(state, template))
     print()
 
@@ -110,8 +113,8 @@ def answer(client, db_connection, viewer, state, question, template):
         return None
 
     state.history.append({"role": "assistant", "content": reply})
-    save_message(db_connection, viewer, "user", question)
-    save_message(db_connection, viewer, "assistant", reply)
+    save_message(db_connection, viewer_id, "user", question)
+    save_message(db_connection, viewer_id, "assistant", reply)
     return reply
 
 
@@ -139,21 +142,29 @@ def main():
             if question is None:
                 continue
 
-            viewer = message["author"]
-            if viewer not in viewers:
-                viewers[viewer] = load_viewer(db_connection, viewer)
-            state = viewers[viewer]
+            viewer_id = message["user_id"]
+            if viewer_id not in viewers:
+                remember_viewer(
+                    db_connection,
+                    viewer_id,
+                    message["author"],
+                    message["display_name"],
+                )
+                viewers[viewer_id] = load_viewer(
+                    db_connection, viewer_id, message["display_name"]
+                )
+            state = viewers[viewer_id]
 
-            print(f"{viewer} : {question}")
+            print(f"{state.display_name} : {question}")
 
             fact = parse_remember_command(question, remember_commands)
             if fact is not None:
-                remember(db_connection, viewer, state, fact)
-                print(f"Sensai : @{viewer} {ack_message}")
+                remember(db_connection, viewer_id, state, fact)
+                print(f"Sensai : @{state.display_name} {ack_message}")
                 continue
 
             reply = answer(
-                client, db_connection, viewer, state, question, context_template
+                client, db_connection, viewer_id, state, question, context_template
             )
             if reply is None:
                 continue
@@ -163,7 +174,7 @@ def main():
 
             if used is not None and used > token_budget:
                 compressed = compress(
-                    client, summary_rules, db_connection, viewer, state
+                    client, summary_rules, db_connection, viewer_id, state
                 )
                 if compressed:
                     print(f"[compress] {compressed} messages summarized")
