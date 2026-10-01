@@ -1,3 +1,5 @@
+import time
+
 from src.core.ollama_client import OllamaClient, load_config
 from src.core.prompts import load_prompt
 from src.tools.twitch_chat import connect, messages
@@ -7,6 +9,7 @@ from src.core.memory import (
     load_history,
     find_viewer_id,
     load_summary,
+    record_activity,
     remember_viewer,
     save_fact,
     save_message,
@@ -42,6 +45,21 @@ def match_trigger(text, trigger):
         return None
     cleaned = text[:position] + text[position + len(trigger):]
     return " ".join(cleaned.split())
+
+
+def message_time(message):
+    sent_at = message.get("sent_at")
+    if sent_at and sent_at.isdigit():
+        return int(sent_at) // 1000
+    return int(time.time())
+
+
+def format_duration(seconds):
+    hours, rest = divmod(int(seconds), 3600)
+    minutes = rest // 60
+    if hours:
+        return f"{hours}h{minutes:02d}"
+    return f"{minutes}min"
 
 
 def parse_command(text, prefix):
@@ -141,9 +159,10 @@ def main():
     trigger = agent_config["trigger"]
     command_prefix = agent_config["command_prefix"]
     remember_command = agent_config["remember_command"]
-    ack_message = agent_config["ack_message"]
-    unknown_viewer_message = agent_config["unknown_viewer_message"]
+    fact_saved_message = agent_config["fact_saved_message"]
+    viewer_not_found_message = agent_config["viewer_not_found_message"]
     token_budget = agent_config["history_token_budget"]
+    session_gap = agent_config["session_gap_minutes"] * 60
 
     context_template = load_prompt("viewer_context")
     summary_rules = load_prompt("summarize")
@@ -157,6 +176,17 @@ def main():
 
     try:
         for message in messages(sock):
+            viewer_id = message["user_id"]
+            remember_viewer(
+                db_connection,
+                viewer_id,
+                message["author"],
+                message["display_name"],
+            )
+            stats = record_activity(
+                db_connection, viewer_id, message_time(message), session_gap
+            )
+
             command = parse_command(message["text"], command_prefix)
             if command is not None:
                 name, arguments = command
@@ -164,29 +194,27 @@ def main():
                     author = message["display_name"]
                     target = remember_about(db_connection, viewers, arguments)
                     if target is None:
-                        print(f"Sensai : @{author} {unknown_viewer_message}")
+                        print(f"Sensai : @{author} {viewer_not_found_message}")
                     else:
-                        print(f"Sensai : @{author} {ack_message}")
+                        print(f"Sensai : @{author} {fact_saved_message}")
                 continue
 
             question = match_trigger(message["text"], trigger)
             if question is None:
                 continue
 
-            viewer_id = message["user_id"]
             if viewer_id not in viewers:
-                remember_viewer(
-                    db_connection,
-                    viewer_id,
-                    message["author"],
-                    message["display_name"],
-                )
                 viewers[viewer_id] = load_viewer(
                     db_connection, viewer_id, message["display_name"]
                 )
             state = viewers[viewer_id]
 
             print(f"{state.display_name} : {question}")
+            print(
+                f"[viewer] {stats['visits']} visits, "
+                f"{stats['message_count']} messages, "
+                f"{format_duration(stats['active_seconds'])} active"
+            )
 
             reply = answer(
                 client, db_connection, viewer_id, state, question, context_template
