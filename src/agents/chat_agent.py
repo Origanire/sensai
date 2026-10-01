@@ -46,6 +46,7 @@ if __name__ == "__main__":
     channel = config["twitch_channel"]
     trigger = config["twitch_trigger"]
     remember_command = config["twitch_remember_command"]
+    token_budget = config["history_token_budget"]
 
     client = OllamaClient(config)
     db_connection = init_memory()
@@ -86,10 +87,12 @@ if __name__ == "__main__":
                 history.pop()
                 continue
 
-            print(
-                f"[tokens] prompt {client.last_prompt_tokens}, "
-                f"réponse {client.last_response_tokens}"
-            )
+            used = client.last_prompt_tokens
+            print(f"[tokens] {used}/{token_budget}", end="")
+            if used is not None and used > token_budget:
+                print("  BUDGET DEPASSE")
+            else:
+                print()
 
             history.append({"role": "assistant", "content": answer})
             save_message(db_connection, author, "user", question)

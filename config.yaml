@@ -12,3 +12,8 @@ temperature: 0.7
 twitch_channel: kevinaigre
 twitch_trigger: "@sensai"
 twitch_remember_command: "retiens"
+
+# Taille max de l'historique envoyé au modèle, en tokens.
+# Ollama fait tourner llama3.2 avec 4096 tokens de contexte : il faut
+# laisser de la place pour la réponse (voir max_tokens).
+history_token_budget: 2500
