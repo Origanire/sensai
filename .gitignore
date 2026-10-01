@@ -22,16 +22,13 @@ lib64
 
 # Système
 .DS_Store
-<<<<<<< HEAD
 
 # Données locales générées par le projet
 sensai.db
 documents/
 *.cfg
-=======
 *.db
 
 # Documentation Doxygen générée (seul doc/Doxyfile est versionné)
 doc/html/
 doc/latex/
->>>>>>> 8abc1b7749b8b41085d80e8d54cc2415bcf6bfa2

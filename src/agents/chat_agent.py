@@ -1,3 +1,7 @@
+## @file chat_agent.py
+# @brief Agent chat Twitch : répond aux viewers qui mentionnent Sensai, en
+# s'appuyant sur leur historique et leur profil.
+
 import time
 
 from src.core.ollama_client import OllamaClient, load_config
@@ -17,19 +21,40 @@ from src.core.memory import (
     save_summary,
 )
 
+## @brief Fichier de configuration propre à cet agent.
 AGENT_CONFIG = "config/chat_agent.yaml"
+## @brief Nombre de messages gardés tels quels lors d'une compression ;
+# tout ce qui est plus ancien part dans le résumé.
 KEEP_RECENT_MESSAGES = 4
+## @brief Valeur affichée dans le prompt quand une section est vide.
 NOTHING = "(none)"
 
 
+## @brief État d'un viewer en mémoire pendant la session.
 class ViewerState:
+    ## @brief Construit l'état d'un viewer.
+    #
+    # @param history Messages actifs, au format "role"/"content".
+    # @param facts Faits connus sur ce viewer.
+    # @param summary Résumé des échanges plus anciens, ou None.
+    # @param display_name Pseudo tel qu'affiché dans le chat.
     def __init__(self, history, facts, summary, display_name):
+        ## @brief Messages actifs, envoyés tels quels au modèle.
         self.history = history
+        ## @brief Faits connus sur ce viewer.
         self.facts = facts
+        ## @brief Résumé des échanges plus anciens, ou None.
         self.summary = summary
+        ## @brief Pseudo tel qu'affiché dans le chat.
         self.display_name = display_name
 
 
+## @brief Charge depuis la base tout ce que Sensai sait d'un viewer.
+#
+# @param db_connection Connexion SQLite ouverte.
+# @param viewer_id Identifiant Twitch du viewer.
+# @param display_name Pseudo tel qu'affiché dans le chat.
+# @return Instance de ViewerState.
 def load_viewer(db_connection, viewer_id, display_name):
     return ViewerState(
         history=load_history(db_connection, viewer_id),
@@ -39,6 +64,12 @@ def load_viewer(db_connection, viewer_id, display_name):
     )
 
 
+## @brief Détecte si un message s'adresse à Sensai et en retire la mention.
+#
+# @param text Texte du message.
+# @param trigger Mention attendue, par exemple "@sensai".
+# @return Message nettoyé de la mention, ou None s'il ne s'adresse pas à
+#         Sensai. Une chaîne vide signifie une mention sans question.
 def match_trigger(text, trigger):
     lowered = text.lower()
     position = lowered.find(trigger.lower())
@@ -48,6 +79,14 @@ def match_trigger(text, trigger):
     return " ".join(cleaned.split())
 
 
+## @brief Met à jour les compteurs d'un viewer pour la session en cours.
+#
+# Tout reste en mémoire : aucune écriture disque pendant le stream.
+#
+# @param activity Dictionnaire des sessions en cours, modifié sur place.
+# @param viewer_id Identifiant Twitch du viewer.
+# @param seen_at Horodatage du message, en secondes.
+# @return Session du viewer : "first", "last", "messages".
 def track_activity(activity, viewer_id, seen_at):
     session = activity.get(viewer_id)
     if session is None:
@@ -59,6 +98,13 @@ def track_activity(activity, viewer_id, seen_at):
     return session
 
 
+## @brief Écrit en base l'activité de la session et vide la mémoire.
+#
+# Appelée une seule fois, à la fermeture de l'agent. Un arrêt brutal
+# (kill -9, coupure) perd donc les statistiques du stream en cours.
+#
+# @param db_connection Connexion SQLite ouverte.
+# @param activity Dictionnaire des sessions, vidé après écriture.
 def flush_activity(db_connection, activity):
     for viewer_id, session in activity.items():
         add_activity(
@@ -71,6 +117,13 @@ def flush_activity(db_connection, activity):
     activity.clear()
 
 
+## @brief Horodatage d'un message, en secondes.
+#
+# Utilise l'heure d'envoi fournie par Twitch, pour que les statistiques
+# restent justes même si l'agent prend du retard.
+#
+# @param message Message produit par le connecteur.
+# @return Horodatage en secondes, l'heure locale servant de repli.
 def message_time(message):
     sent_at = message.get("sent_at")
     if sent_at and sent_at.isdigit():
@@ -78,6 +131,10 @@ def message_time(message):
     return int(time.time())
 
 
+## @brief Met une durée en forme pour l'affichage.
+#
+# @param seconds Durée en secondes.
+# @return Chaîne du type "2h05" ou "42min".
 def format_duration(seconds):
     hours, rest = divmod(int(seconds), 3600)
     minutes = rest // 60
@@ -86,6 +143,12 @@ def format_duration(seconds):
     return f"{minutes}min"
 
 
+## @brief Reconnaît une commande préfixée.
+#
+# @param text Texte du message.
+# @param prefix Préfixe des commandes, par exemple "!".
+# @return Couple (nom en minuscules, arguments), ou None si ce n'est pas
+#         une commande.
 def parse_command(text, prefix):
     if not text.startswith(prefix):
         return None
@@ -96,6 +159,16 @@ def parse_command(text, prefix):
     return name.lower(), arguments.strip()
 
 
+## @brief Enregistre un fait sur un viewer désigné par son pseudo.
+#
+# Réservée au streamer et aux modérateurs ; la vérification des droits est
+# faite par l'appelant.
+#
+# @param db_connection Connexion SQLite ouverte.
+# @param viewers États des viewers chargés, mis à jour si le viewer visé y est.
+# @param arguments Arguments de la commande : le pseudo visé, puis le fait.
+# @return Pseudo visé si le fait a été enregistré ; None si les arguments
+#         sont incomplets ou si ce viewer n'a jamais écrit.
 def remember_about(db_connection, viewers, arguments):
     target, _, fact = arguments.partition(" ")
     target = target.lstrip("@")
@@ -113,6 +186,15 @@ def remember_about(db_connection, viewers, arguments):
     return target
 
 
+## @brief Compose le prompt envoyé au modèle pour un viewer.
+#
+# Le profil et le résumé sont recalculés à chaque appel dans un message
+# "system" neuf : ils ne sont jamais ajoutés à l'historique, qui serait
+# sinon pollué et persisté avec eux.
+#
+# @param state État du viewer.
+# @param template Gabarit chargé depuis prompts/viewer_context.txt.
+# @return Liste de messages prête pour Ollama.
 def build_prompt(state, template):
     if not state.facts and not state.summary:
         return state.history
@@ -122,6 +204,13 @@ def build_prompt(state, template):
     return [{"role": "system", "content": system}] + state.history
 
 
+## @brief Condense d'anciens échanges en un résumé.
+#
+# @param client Client Ollama.
+# @param rules Consignes chargées depuis prompts/summarize.txt.
+# @param previous_summary Résumé déjà existant, ou None.
+# @param old_messages Messages à condenser.
+# @return Texte du résumé, ou None en cas d'échec du modèle.
 def summarize(client, rules, previous_summary, old_messages):
     lines = []
     for message in old_messages:
@@ -143,6 +232,14 @@ def summarize(client, rules, previous_summary, old_messages):
     return summary.strip() if summary else None
 
 
+## @brief Résume les plus anciens messages et les retire de l'historique.
+#
+# @param client Client Ollama.
+# @param rules Consignes de résumé.
+# @param db_connection Connexion SQLite ouverte.
+# @param viewer_id Identifiant Twitch du viewer.
+# @param state État du viewer, modifié sur place.
+# @return Nombre de messages résumés, 0 si rien n'a été fait.
 def compress(client, rules, db_connection, viewer_id, state):
     if len(state.history) <= KEEP_RECENT_MESSAGES:
         return 0
@@ -158,6 +255,18 @@ def compress(client, rules, db_connection, viewer_id, state):
     return len(old_messages)
 
 
+## @brief Fait répondre Sensai à un viewer et enregistre l'échange.
+#
+# En cas d'échec du modèle, la question est retirée de l'historique pour
+# ne pas y laisser un tour sans réponse.
+#
+# @param client Client Ollama.
+# @param db_connection Connexion SQLite ouverte.
+# @param viewer_id Identifiant Twitch du viewer.
+# @param state État du viewer, modifié sur place.
+# @param question Message du viewer, sans la mention.
+# @param template Gabarit de contexte.
+# @return Réponse du modèle, ou None en cas d'échec.
 def answer(client, db_connection, viewer_id, state, question, template):
     state.history.append({"role": "user", "content": question})
 
@@ -175,6 +284,12 @@ def answer(client, db_connection, viewer_id, state, question, template):
     return reply
 
 
+## @brief Point d'entrée de l'agent chat.
+#
+# Boucle sur les messages du chat : compte l'activité de tout le monde,
+# exécute les commandes des modérateurs, et répond à ceux qui mentionnent
+# Sensai. Aucun contenu n'est enregistré pour les messages qui ne lui sont
+# pas adressés.
 def main():
     config = load_config()
     agent_config = load_config(AGENT_CONFIG)
