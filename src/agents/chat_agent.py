@@ -1,4 +1,5 @@
 from src.core.ollama_client import OllamaClient, load_config
+from src.core.prompts import load_prompt
 from src.tools.twitch_chat import connect, messages
 from src.core.memory import (
     init_memory,
@@ -9,15 +10,7 @@ from src.core.memory import (
 )
 
 KEEP_RECENT_MESSAGES = 4
-
-SUMMARY_RULES = (
-    "Tu résumes une conversation entre un assistant de stream et un viewer.\n"
-    "Condense les échanges en un paragraphe court.\n"
-    "Garde ce qui sera utile pour la suite : ce que le viewer a demandé, "
-    "ce qui lui a été répondu, les préférences qu'il a exprimées.\n"
-    "Écris à la troisième personne, ne pose aucune question, n'invente rien.\n"
-    "Si un résumé précédent est fourni, intègre-le au nouveau."
-)
+NOTHING = "(none)"
 
 
 class ViewerState:
@@ -43,49 +36,38 @@ def match_trigger(text, trigger):
     return " ".join(cleaned.split())
 
 
-def parse_remember_command(question, command):
-    if not question.lower().startswith(command.lower()):
-        return None
-    fact = question[len(command):].strip()
-    if fact.lower().startswith("que "):
-        fact = fact[4:].strip()
-    return fact or None
+def parse_remember_command(question, commands):
+    for command in commands:
+        if question.lower().startswith(command.lower()):
+            fact = question[len(command):].strip()
+            if fact:
+                return fact
+    return None
 
 
-def build_prompt(state):
-    blocks = []
-
-    if state.facts:
-        known = "\n".join(f"- {fact}" for fact in state.facts)
-        blocks.append(f"Voici ce que tu sais déjà sur ce viewer :\n{known}")
-
-    if state.summary:
-        blocks.append(f"Résumé des échanges précédents :\n{state.summary}")
-
-    if not blocks:
+def build_prompt(state, template):
+    if not state.facts and not state.summary:
         return state.history
 
-    system = "\n\n".join(blocks) + (
-        "\n\nUtilise ces informations si elles sont pertinentes, "
-        "sans les répéter inutilement."
-    )
+    facts = "\n".join(f"- {fact}" for fact in state.facts) or NOTHING
+    system = template.format(facts=facts, summary=state.summary or NOTHING)
     return [{"role": "system", "content": system}] + state.history
 
 
-def summarize(client, previous_summary, old_messages):
+def summarize(client, rules, previous_summary, old_messages):
     lines = []
     for message in old_messages:
         speaker = "Viewer" if message["role"] == "user" else "Assistant"
-        lines.append(f"{speaker} : {message['content']}")
+        lines.append(f"{speaker}: {message['content']}")
 
     request = ""
     if previous_summary:
-        request += f"Résumé précédent :\n{previous_summary}\n\n"
-    request += "Échanges à résumer :\n" + "\n".join(lines)
+        request += f"Previous summary:\n{previous_summary}\n\n"
+    request += "Exchanges to summarize:\n" + "\n".join(lines)
 
     summary = client.chat_silent(
         [
-            {"role": "system", "content": SUMMARY_RULES},
+            {"role": "system", "content": rules},
             {"role": "user", "content": request},
         ],
         temperature=0,
@@ -93,12 +75,12 @@ def summarize(client, previous_summary, old_messages):
     return summary.strip() if summary else None
 
 
-def compress(client, state):
+def compress(client, rules, state):
     if len(state.history) <= KEEP_RECENT_MESSAGES:
         return 0
 
     old_messages = state.history[:-KEEP_RECENT_MESSAGES]
-    summary = summarize(client, state.summary, old_messages)
+    summary = summarize(client, rules, state.summary, old_messages)
     if summary is None:
         return 0
 
@@ -112,11 +94,11 @@ def remember(db_connection, viewer, state, fact):
     state.facts.append(fact)
 
 
-def answer(client, db_connection, viewer, state, question):
+def answer(client, db_connection, viewer, state, question, template):
     state.history.append({"role": "user", "content": question})
 
     print(f"Sensai : @{viewer} ", end="", flush=True)
-    reply = client.chat(build_prompt(state))
+    reply = client.chat(build_prompt(state, template))
     print()
 
     if reply is None:
@@ -133,15 +115,19 @@ def main():
     config = load_config()
     channel = config["twitch_channel"]
     trigger = config["twitch_trigger"]
-    remember_command = config["twitch_remember_command"]
+    remember_commands = config["twitch_remember_commands"]
+    ack_message = config["twitch_ack_message"]
     token_budget = config["history_token_budget"]
+
+    context_template = load_prompt("viewer_context")
+    summary_rules = load_prompt("summarize")
 
     client = OllamaClient(config)
     db_connection = init_memory()
     sock = connect(channel)
     viewers = {}
 
-    print(f"En écoute sur #{channel}, déclencheur « {trigger} ». Ctrl+C pour quitter.\n")
+    print(f"Listening on #{channel}, trigger \"{trigger}\". Ctrl+C to quit.\n")
 
     try:
         for message in messages(sock):
@@ -156,22 +142,25 @@ def main():
 
             print(f"{viewer} : {question}")
 
-            fact = parse_remember_command(question, remember_command)
+            fact = parse_remember_command(question, remember_commands)
             if fact is not None:
                 remember(db_connection, viewer, state, fact)
-                print(f"Sensai : @{viewer} c'est noté.")
+                print(f"Sensai : @{viewer} {ack_message}")
                 continue
 
-            if answer(client, db_connection, viewer, state, question) is None:
+            reply = answer(
+                client, db_connection, viewer, state, question, context_template
+            )
+            if reply is None:
                 continue
 
             used = client.last_prompt_tokens
             print(f"[tokens] {used}/{token_budget}")
 
             if used is not None and used > token_budget:
-                compressed = compress(client, state)
+                compressed = compress(client, summary_rules, state)
                 if compressed:
-                    print(f"[compression] {compressed} messages résumés")
+                    print(f"[compress] {compressed} messages summarized")
     finally:
         sock.close()
         db_connection.close()

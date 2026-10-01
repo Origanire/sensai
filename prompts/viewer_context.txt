@@ -1,0 +1,8 @@
+Known facts about this viewer:
+{facts}
+
+Summary of earlier exchanges:
+{summary}
+
+Use this information when relevant, without repeating it unnecessarily.
+Always reply in the same language as the viewer.
