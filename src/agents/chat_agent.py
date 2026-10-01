@@ -86,6 +86,11 @@ if __name__ == "__main__":
                 history.pop()
                 continue
 
+            print(
+                f"[tokens] prompt {client.last_prompt_tokens}, "
+                f"réponse {client.last_response_tokens}"
+            )
+
             history.append({"role": "assistant", "content": answer})
             save_message(db_connection, author, "user", question)
             save_message(db_connection, author, "assistant", answer)
