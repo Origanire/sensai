@@ -7,27 +7,3 @@ max_tokens: 1024
 
 # 0 = très déterministe / répétitif, 1 = très créatif / aléatoire
 temperature: 0.7
-
-# Agent chat Twitch
-twitch_channel: kevinaigre
-
-# Mention à laquelle Sensai répond dans le chat.
-twitch_trigger: "@sensai"
-
-# Préfixe des commandes réservées au streamer et aux modérateurs.
-twitch_command_prefix: "!"
-
-# Commande qui enregistre un fait dans le profil d'un viewer.
-# Usage : !remember <pseudo> <fait>
-twitch_remember_command: "remember"
-
-# Réponse affichée quand un fait a bien été enregistré.
-twitch_ack_message: "noté."
-
-# Réponse affichée quand le viewer visé n'a jamais parlé dans le chat.
-twitch_unknown_viewer_message: "je ne connais pas encore ce viewer."
-
-# Taille max de l'historique envoyé au modèle, en tokens.
-# Ollama fait tourner llama3.2 avec 4096 tokens de contexte : il faut
-# laisser de la place pour la réponse (voir max_tokens).
-history_token_budget: 2500

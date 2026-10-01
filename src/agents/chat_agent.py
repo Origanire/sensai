@@ -13,6 +13,7 @@ from src.core.memory import (
     save_summary,
 )
 
+AGENT_CONFIG = "config/chat_agent.yaml"
 KEEP_RECENT_MESSAGES = 4
 NOTHING = "(none)"
 
@@ -134,13 +135,15 @@ def answer(client, db_connection, viewer_id, state, question, template):
 
 def main():
     config = load_config()
-    channel = config["twitch_channel"]
-    trigger = config["twitch_trigger"]
-    command_prefix = config["twitch_command_prefix"]
-    remember_command = config["twitch_remember_command"]
-    ack_message = config["twitch_ack_message"]
-    unknown_viewer_message = config["twitch_unknown_viewer_message"]
-    token_budget = config["history_token_budget"]
+    agent_config = load_config(AGENT_CONFIG)
+
+    channel = agent_config["channel"]
+    trigger = agent_config["trigger"]
+    command_prefix = agent_config["command_prefix"]
+    remember_command = agent_config["remember_command"]
+    ack_message = agent_config["ack_message"]
+    unknown_viewer_message = agent_config["unknown_viewer_message"]
+    token_budget = agent_config["history_token_budget"]
 
     context_template = load_prompt("viewer_context")
     summary_rules = load_prompt("summarize")
