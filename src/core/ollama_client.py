@@ -29,6 +29,10 @@ class OllamaClient:
         self.url = config["ollama_url"]
         ## @brief Température du modèle (0 = déterministe, 1 = créatif).
         self.temperature = config.get("temperature", 0.7)
+        ## @brief Tokens du prompt envoyé lors du dernier appel (None avant le premier).
+        self.last_prompt_tokens = None
+        ## @brief Tokens générés lors du dernier appel (None avant le premier).
+        self.last_response_tokens = None
 
     ## @brief Envoie une conversation au modèle et affiche la réponse en streaming.
     #
@@ -82,6 +86,8 @@ class OllamaClient:
                     full_response += token
 
                     if chunk.get("done", False):
+                        self.last_prompt_tokens = chunk.get("prompt_eval_count")
+                        self.last_response_tokens = chunk.get("eval_count")
                         break
         except requests.exceptions.ChunkedEncodingError:
             print("\n[Erreur] La connexion a été coupée pendant la réponse.")
@@ -135,7 +141,10 @@ class OllamaClient:
             return None
 
         try:
-            return response.json()["message"]["content"]
+            data = response.json()
+            self.last_prompt_tokens = data.get("prompt_eval_count")
+            self.last_response_tokens = data.get("eval_count")
+            return data["message"]["content"]
         except (json.JSONDecodeError, KeyError):
             print("\n[Erreur] Réponse invalide reçue d'Ollama.")
             return None
