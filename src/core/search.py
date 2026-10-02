@@ -1,15 +1,15 @@
 ## @file search.py
-# @brief Recherche sémantique par similarité cosinus et chat RAG.
+# @brief Semantic search via cosine similarity and RAG chat.
 
 import math
 from src.core.storage import load_all_chunks
 
 
-## @brief Calcule la similarité cosinus entre deux vecteurs.
+## @brief Compute the cosine similarity between two vectors.
 #
-# @param vec_a Premier vecteur.
-# @param vec_b Second vecteur.
-# @return Score de similarité entre -1 et 1 (0 si un vecteur est nul).
+# @param vec_a First vector.
+# @param vec_b Second vector.
+# @return Similarity score between -1 and 1 (0 if a vector is zero).
 def cosine_similarity(vec_a, vec_b):
     dot_product = sum(a * b for a, b in zip(vec_a, vec_b))
     norm_a = math.sqrt(sum(a * a for a in vec_a))
@@ -21,16 +21,16 @@ def cosine_similarity(vec_a, vec_b):
     return dot_product / (norm_a * norm_b)
 
 
-## @brief Recherche les chunks les plus proches sémantiquement d'une requête.
+## @brief Find the chunks semantically closest to a query.
 #
-# La requête est embeddée puis comparée (similarité cosinus) à tous les
-# chunks de la base, qui sont triés par score décroissant.
+# The query is embedded then compared (cosine similarity) to every chunk
+# in the database, which are sorted by decreasing score.
 #
-# @param query Requête en langue naturelle.
-# @param client Client Ollama, utilisé pour embedder la requête.
-# @param conn Connexion SQLite contenant les chunks.
-# @param top_k Nombre de chunks à renvoyer.
-# @return Liste de tuples (score, chunk), triée par similarité décroissante.
+# @param query Natural-language query.
+# @param client Ollama client, used to embed the query.
+# @param conn SQLite connection holding the chunks.
+# @param top_k Number of chunks to return.
+# @return List of (score, chunk) tuples, sorted by decreasing similarity.
 def search(query, client, conn, top_k=3):
     query_vector = client.embed(query)
     if query_vector is None:
@@ -47,17 +47,16 @@ def search(query, client, conn, top_k=3):
 
     return scored[:top_k]
 
-## @brief Répond à une requête en s'appuyant sur les documents ingérés (RAG).
+## @brief Answer a query using the ingested documents (RAG).
 #
-# Récupère les top_k chunks les plus pertinents, les injecte comme contexte
-# dans un prompt, puis demande au modèle de répondre uniquement à partir
-# de ce contexte.
+# Retrieves the top_k most relevant chunks, injects them as context into
+# a prompt, then asks the model to answer using only that context.
 #
-# @param query Question de l'utilisateur.
-# @param client Client Ollama (embedding de la requête + chat).
-# @param conn Connexion SQLite contenant les chunks.
-# @param top_k Nombre de chunks injectés dans le contexte.
-# @return Réponse du modèle, ou None en cas d'erreur.
+# @param query User's question.
+# @param client Ollama client (query embedding + chat).
+# @param conn SQLite connection holding the chunks.
+# @param top_k Number of chunks injected into the context.
+# @return The model's response, or None on error.
 def rag_chat(query, client, conn, top_k=3):
     results = search(query, client, conn, top_k=top_k)
 

@@ -1,21 +1,21 @@
 ## @file twitch_chat.py
-# @brief Connecteur de chat Twitch : lecture anonyme des messages via IRC.
+# @brief Twitch chat connector: anonymous reading of messages via IRC.
 
 import socket
 
-## @brief Serveur IRC du chat Twitch.
+## @brief Twitch chat IRC server.
 HOST = "irc.chat.twitch.tv"
-## @brief Port IRC en clair.
+## @brief Cleartext IRC port.
 PORT = 6667
-## @brief Pseudo anonyme : Twitch accepte tout pseudo commençant par
-# "justinfan" en lecture seule, sans compte ni token.
+## @brief Anonymous nickname: Twitch accepts any nickname starting with
+# "justinfan" for read-only access, without an account or token.
 NICK = "justinfan82730"
-## @brief Capacités IRC demandées. "tags" ajoute les métadonnées de chaque
-# message (user-id, pseudo d'affichage, badges, horodatage).
+## @brief Requested IRC capabilities. "tags" adds the metadata of each
+# message (user-id, display name, badges, timestamp).
 CAPABILITIES = "twitch.tv/tags twitch.tv/commands"
 
-## @brief Séquences d'échappement utilisées par Twitch dans les valeurs de
-# tags : l'espace et le point-virgule y sont des séparateurs.
+## @brief Escape sequences used by Twitch in tag values: space and
+# semicolon are separators there.
 TAG_ESCAPES = (
     ("\\s", " "),
     ("\\:", ";"),
@@ -25,10 +25,10 @@ TAG_ESCAPES = (
 )
 
 
-## @brief Ouvre la connexion au chat d'une chaîne et demande les tags.
+## @brief Open the connection to a channel's chat and request the tags.
 #
-# @param channel Nom de la chaîne, sans le "#".
-# @return Socket connecté, prêt à être lu par messages().
+# @param channel Name of the channel, without the "#".
+# @return Connected socket, ready to be read by messages().
 def connect(channel):
     sock = socket.create_connection((HOST, PORT))
     sock.sendall(
@@ -38,20 +38,20 @@ def connect(channel):
     return sock
 
 
-## @brief Restitue les caractères échappés d'une valeur de tag.
+## @brief Restore the escaped characters of a tag value.
 #
-# @param value Valeur brute telle que reçue de Twitch.
-# @return Valeur lisible.
+# @param value Raw value as received from Twitch.
+# @return Readable value.
 def unescape_tag(value):
     for escaped, character in TAG_ESCAPES:
         value = value.replace(escaped, character)
     return value
 
 
-## @brief Découpe la portion de tags d'une ligne IRC.
+## @brief Split the tags portion of an IRC line.
 #
-# @param raw Chaîne de la forme "cle=valeur;cle=valeur", sans le "@".
-# @return Dictionnaire des tags, valeurs déséchappées.
+# @param raw String of the form "key=value;key=value", without the "@".
+# @return Dictionary of the tags, values unescaped.
 def parse_tags(raw):
     tags = {}
     for item in raw.split(";"):
@@ -61,10 +61,10 @@ def parse_tags(raw):
     return tags
 
 
-## @brief Sépare les tags du reste d'une ligne IRC.
+## @brief Separate the tags from the rest of an IRC line.
 #
-# @param line Ligne complète, avec ou sans préfixe de tags.
-# @return Couple (dictionnaire des tags, ligne sans les tags).
+# @param line Full line, with or without a tags prefix.
+# @return A (tags dictionary, line without tags) pair.
 def split_tags(line):
     if not line.startswith("@"):
         return {}, line
@@ -73,26 +73,26 @@ def split_tags(line):
     return parse_tags(raw), rest
 
 
-## @brief Indique si l'auteur a les droits de modération.
+## @brief Tell whether the author has moderation rights.
 #
-# Le streamer a le badge "broadcaster" mais son tag "mod" vaut 0 : il faut
-# donc tester les deux, sinon il n'a aucun droit sur sa propre chaîne.
+# The streamer has the "broadcaster" badge but their "mod" tag is 0: both
+# must be checked, otherwise they get no rights on their own channel.
 #
-# @param tags Tags du message.
-# @return True pour le streamer et les modérateurs, False sinon.
+# @param tags Tags of the message.
+# @return True for the streamer and moderators, False otherwise.
 def is_moderator(tags):
     badges = tags.get("badges", "")
     return tags.get("mod") == "1" or "broadcaster/" in badges
 
 
-## @brief Extrait un message de chat d'une ligne IRC.
+## @brief Extract a chat message from an IRC line.
 #
-# Si les tags sont absents, user_id et display_name retombent sur le login,
-# ce qui évite de casser sur une ligne sans métadonnées.
+# If the tags are missing, user_id and display_name fall back to the
+# login, which avoids breaking on a line without metadata.
 #
-# @param line Ligne IRC brute, sans le "\r\n" final.
-# @return Dictionnaire "author", "text", "user_id", "display_name",
-#         "is_moderator", "sent_at" ; ou None si ce n'est pas un message.
+# @param line Raw IRC line, without the trailing "\r\n".
+# @return Dictionary "author", "text", "user_id", "display_name",
+#         "is_moderator", "sent_at"; or None if it is not a message.
 def parse_privmsg(line):
     tags, line = split_tags(line)
 
@@ -114,14 +114,14 @@ def parse_privmsg(line):
     }
 
 
-## @brief Générateur des messages de chat reçus.
+## @brief Generator over the chat messages received.
 #
-# recv() renvoie des octets, pas des lignes : un message peut arriver coupé
-# en deux. Le reste incomplet est conservé dans le buffer jusqu'au prochain
-# appel. Répond aussi aux PING de Twitch, sans quoi le serveur déconnecte.
+# recv() returns bytes, not lines: a message may arrive split in two.
+# The incomplete remainder is kept in the buffer until the next call.
+# Also answers Twitch's PINGs, otherwise the server disconnects us.
 #
-# @param sock Socket ouvert par connect().
-# @return Itérateur de dictionnaires produits par parse_privmsg().
+# @param sock Socket opened by connect().
+# @return Iterator over the dictionaries produced by parse_privmsg().
 def messages(sock):
     buffer = ""
     while True:
@@ -138,9 +138,9 @@ def messages(sock):
                 yield message
 
 
-## @brief Test manuel : affiche en direct les messages d'une chaîne.
+## @brief Manual test: live-prints the messages of a channel.
 #
-# Usage : python3 -m src.tools.twitch_chat NOM_DE_CHAINE
+# Usage: python3 -m src.tools.twitch_chat CHANNEL_NAME
 def main():
     import sys
 

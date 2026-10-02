@@ -1,21 +1,21 @@
 ## @file prompts.py
-# @brief Chargement des prompts depuis le dossier prompts/.
+# @brief Loading of prompts from the prompts/ directory.
 
 import sys
 from pathlib import Path
 
-## @brief Dossier contenant les fichiers de prompts (.txt), à la racine du projet.
+## @brief Directory containing the prompt files (.txt), at the project root.
 PROMPTS_DIR = Path(__file__).resolve().parents[2] / "prompts"
 
 
-## @brief Charge un prompt depuis prompts/NOM.txt.
+## @brief Load a prompt from prompts/NAME.txt.
 #
-# Les instructions destinées au modèle vivent dans des fichiers plutôt que
-# dans le code : on peut les ajuster ou les traduire sans toucher au Python.
+# Instructions meant for the model live in files rather than in the code:
+# they can be adjusted or translated without touching the Python.
 #
-# @param name Nom du prompt, sans l'extension .txt.
-# @return Contenu du fichier, débarrassé des espaces de début et de fin.
-# @exception SystemExit Si le fichier est introuvable.
+# @param name Name of the prompt, without the .txt extension.
+# @return Contents of the file, stripped of leading and trailing whitespace.
+# @exception SystemExit If the file is not found.
 def load_prompt(name):
     path = PROMPTS_DIR / f"{name}.txt"
     try:

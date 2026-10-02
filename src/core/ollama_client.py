@@ -1,48 +1,47 @@
 ## @file ollama_client.py
-# @brief Client HTTP vers l'API Ollama (chat en streaming, embeddings, erreurs).
+# @brief HTTP client for the Ollama API (streaming chat, embeddings, errors).
 
 import requests
 import json
 import yaml
 
 
-## @brief Charge la configuration du projet depuis un fichier YAML.
+## @brief Load the project configuration from a YAML file.
 #
-# @param path Chemin du fichier de configuration.
-# @return Dictionnaire de configuration (modèle, URL, température...).
+# @param path Path of the configuration file.
+# @return Configuration dictionary (model, URL, temperature...).
 def load_config(path="config.yaml"):
     with open(path, "r") as f:
         return yaml.safe_load(f)
 
 
-## @brief Client HTTP pour l'API Ollama (chat en streaming, embeddings).
+## @brief HTTP client for the Ollama API (streaming chat, embeddings).
 class OllamaClient:
-    ## @brief Initialise le client à partir de la configuration.
+    ## @brief Initialize the client from the configuration.
     #
-    # @param config Dictionnaire de configuration ; s'il est None, la
-    #                configuration par défaut est chargée automatiquement.
+    # @param config Configuration dictionary; if None, the default
+    #                configuration is loaded automatically.
     def __init__(self, config=None):
         config = config or load_config()
-        ## @brief Nom du modèle Ollama utilisé.
+        ## @brief Name of the Ollama model in use.
         self.model = config["model"]
-        ## @brief URL locale de l'API Ollama.
+        ## @brief Local URL of the Ollama API.
         self.url = config["ollama_url"]
-        ## @brief Température du modèle (0 = déterministe, 1 = créatif).
+        ## @brief Model temperature (0 = deterministic, 1 = creative).
         self.temperature = config.get("temperature", 0.7)
-        ## @brief Tokens du prompt envoyé lors du dernier appel (None avant le premier).
+        ## @brief Tokens of the prompt sent on the last call (None before the first).
         self.last_prompt_tokens = None
-        ## @brief Tokens générés lors du dernier appel (None avant le premier).
+        ## @brief Tokens generated on the last call (None before the first).
         self.last_response_tokens = None
 
-    ## @brief Envoie une conversation au modèle et affiche la réponse en streaming.
+    ## @brief Send a conversation to the model and print the response as it streams.
     #
-    # Les tokens sont affichés au fur et à mesure de leur réception, puis
-    # la réponse complète est renvoyée. Les erreurs (Ollama injoignable,
-    # timeout, HTTP, connexion coupée, JSON invalide) sont gérées et
-    # affichées sur la sortie d'erreur.
+    # Tokens are printed as they arrive, then the full response is
+    # returned. Errors (Ollama unreachable, timeout, HTTP, dropped
+    # connection, invalid JSON) are handled and printed to stderr.
     #
-    # @param messages Historique de conversation (liste de dicts "role"/"content").
-    # @return Réponse complète du modèle, ou None en cas d'erreur.
+    # @param messages Conversation history (list of "role"/"content" dicts).
+    # @return The model's full response, or None on error.
     def chat(self, messages):
         if not messages:
             print("[Erreur] Aucun message à envoyer.")
@@ -99,16 +98,15 @@ class OllamaClient:
         print()
         return full_response
 
-    ## @brief Envoie une conversation au modèle et renvoie la réponse sans l'afficher.
+    ## @brief Send a conversation to the model and return the response without printing it.
     #
-    # Contrairement à chat(), l'appel n'est pas en streaming et rien n'est
-    # écrit sur la sortie standard. Destiné aux appels internes des agents
-    # (extraction, reformulation, classification) dont le résultat ne doit
-    # pas apparaître dans l'interface utilisateur.
+    # Unlike chat(), the call is not streamed and nothing is written to
+    # stdout. Meant for internal agent calls (extraction, rephrasing,
+    # classification) whose result must not appear in the user interface.
     #
-    # @param messages Historique de conversation (liste de dicts "role"/"content").
-    # @param temperature Température à utiliser ; si None, celle de la config.
-    # @return Réponse complète du modèle, ou None en cas d'erreur.
+    # @param messages Conversation history (list of "role"/"content" dicts).
+    # @param temperature Temperature to use; if None, the one from the config.
+    # @return The model's full response, or None on error.
     def chat_silent(self, messages, temperature=None):
         if not messages:
             print("[Erreur] Aucun message à envoyer.")
@@ -150,10 +148,10 @@ class OllamaClient:
             return None
 
 
-    ## @brief Génère l'embedding d'un texte via le modèle nomic-embed-text.
+    ## @brief Generate the embedding of a text via the nomic-embed-text model.
     #
-    # @param text Texte à vectoriser.
-    # @return Vecteur d'embedding, ou None en cas d'erreur.
+    # @param text Text to vectorize.
+    # @return The embedding vector, or None on error.
     def embed(self, text):
         payload = {
             "model": "nomic-embed-text",
