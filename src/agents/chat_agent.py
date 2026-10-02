@@ -25,6 +25,7 @@ from src.tools.web_search import (
     load_internet_settings,
 )
 from src.tools.obs import load_obs_settings, obs_reachable, update_text_source
+from src.tools.burst import BurstDetector
 from src.core.memory import (
     init_memory,
     load_facts,
@@ -410,9 +411,9 @@ def answer(client, db_connection, viewer_id, state, question, template):
 
 ## @brief Entry point of the chat agent.
 #
-# Loops over chat messages: tracks everyone's activity, runs commands,
-# and replies to those who mention Sensai. No content is recorded for
-# messages not addressed to it.
+# Loops over chat messages: tracks everyone's activity, logs chat bursts
+# as highlights, runs commands, and replies to those who mention Sensai.
+# No content is recorded for messages not addressed to it.
 #
 # The bot account is read from TWITCH_BOT_USERNAME and TWITCH_OAUTH_TOKEN
 # (environment or .env); without them, the agent reads the chat
@@ -435,6 +436,8 @@ def main():
     moment_usage_message = agent_config["moment_usage_message"]
     search_command = agent_config["search_command"]
     search_usage_message = agent_config["search_usage_message"]
+    moment_cooldown = agent_config["moment_cooldown"]
+    burst_description = agent_config["burst_description"]
     token_budget = agent_config["history_token_budget"]
 
     context_template = load_prompt("viewer_context")
@@ -449,6 +452,14 @@ def main():
     viewers = {}
     activity = {}
     last_search = None
+    last_moment = {}
+    burst = BurstDetector(
+        window=agent_config["burst_window"],
+        audience_window=agent_config["burst_audience_window"],
+        ratio=agent_config["burst_ratio"],
+        min_messages=agent_config["burst_min_messages"],
+        cooldown=agent_config["burst_cooldown"],
+    )
 
     mode = f"as {bot_username}" if chat.writable else "anonymously (read-only)"
     print(f"Listening on #{channel} {mode}, trigger \"{trigger}\". Ctrl+C to quit.\n")
@@ -466,6 +477,18 @@ def main():
             sent_at = message_time(message)
             session = track_activity(activity, viewer_id, sent_at)
 
+            detected = burst.add(viewer_id, sent_at)
+            if detected is not None:
+                count, threshold, audience = detected
+                line = add_moment(
+                    burst_description.format(count=count, window=burst.window),
+                    sent_at,
+                )
+                print(
+                    f"[burst] {count} messages >= {threshold} "
+                    f"({audience} active chatters) -> {line}"
+                )
+
             command = parse_command(message["text"], command_prefix)
             if command is not None:
                 name, arguments = command
@@ -477,11 +500,15 @@ def main():
                             chat.say(f"@{author} {viewer_not_found_message}")
                         else:
                             chat.say(f"@{author} {fact_saved_message}")
-                    elif name == moment_command and message["is_moderator"]:
+                    elif name == moment_command:
+                        previous = last_moment.get(viewer_id)
                         if not arguments:
                             chat.say(f"@{author} {moment_usage_message}")
+                        elif previous is not None and sent_at - previous < moment_cooldown:
+                            print(f"[moment] {author} ignored (cooldown)")
                         else:
-                            line = add_moment(arguments, sent_at)
+                            last_moment[viewer_id] = sent_at
+                            line = add_moment(f"{arguments} ({author})", sent_at)
                             print(f"[moment] {line}")
                             chat.say(f"@{author} {moment_saved_message}")
                     elif name == search_command:

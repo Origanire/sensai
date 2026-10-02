@@ -21,7 +21,7 @@ fact_saved_message: "noté."
 viewer_not_found_message: "je ne connais pas encore ce viewer."
 
 # Commande qui ajoute un moment fort au compte-rendu du stream
-# (section "moments_forts" de stream_report.json).
+# (section "moments_forts" de stream_report.json). Ouverte à tous.
 # Usage : !moment <description>
 moment_command: "moment"
 
@@ -38,6 +38,26 @@ search_command: "search"
 
 # Réponse quand !search est tapé sans question.
 search_usage_message: "usage : !search <question>"
+
+# Délai minimum entre deux !moment d'un même viewer, en secondes.
+# Les !moment envoyés plus tôt sont ignorés sans réponse (anti-spam).
+moment_cooldown: 60
+
+# Détection automatique des pics d'activité du chat.
+# Un pic = au moins max(burst_min_messages, chatteurs actifs * burst_ratio)
+# messages en burst_window secondes. Les chatteurs actifs sont ceux qui ont
+# écrit pendant les burst_audience_window dernières secondes : le seuil suit
+# donc la taille de l'audience.
+burst_window: 10
+burst_audience_window: 300
+burst_ratio: 0.5
+burst_min_messages: 8
+
+# Temps après un pic pendant lequel aucun nouveau pic n'est noté, en secondes.
+burst_cooldown: 120
+
+# Texte du moment fort noté pour un pic ({count} messages en {window} s).
+burst_description: "pic d'activité dans le chat ({count} messages en {window} s)"
 
 # Taille max de l'historique envoyé au modèle, en tokens.
 # Ollama fait tourner llama3.2 avec 4096 tokens de contexte : il faut

@@ -46,7 +46,7 @@ Les réglages de cet agent sont dans `config/chat_agent.yaml`, séparés du
 |---|---|
 | `channel` | chaîne Twitch à écouter |
 | `trigger` | mention à laquelle Sensai répond (`@sensai`) |
-| `command_prefix` | préfixe des commandes de modération (`!`) |
+| `command_prefix` | préfixe des commandes (`!`) |
 | `remember_command` | nom de la commande d'enregistrement (`remember`) |
 | `fact_saved_message` | réponse quand un fait a été enregistré |
 | `viewer_not_found_message` | réponse quand le viewer visé est inconnu |
@@ -55,6 +55,13 @@ Les réglages de cet agent sont dans `config/chat_agent.yaml`, séparés du
 | `moment_usage_message` | réponse quand `!moment` est tapé sans description |
 | `search_command` | nom de la commande de recherche web (`search`) |
 | `search_usage_message` | réponse quand `!search` est tapé sans question |
+| `moment_cooldown` | délai minimum entre deux `!moment` d'un même viewer (s) |
+| `burst_window` | fenêtre de détection d'un pic d'activité (s) |
+| `burst_audience_window` | fenêtre de comptage des chatteurs actifs (s) |
+| `burst_ratio` | messages requis par chatteur actif pour un pic |
+| `burst_min_messages` | seuil minimum d'un pic, quelle que soit l'audience |
+| `burst_cooldown` | silence après un pic détecté (s) |
+| `burst_description` | texte du moment fort noté pour un pic |
 | `history_token_budget` | taille max de l'historique envoyé au modèle |
 
 Le modèle, l'URL d'Ollama et la température restent dans `config.yaml`, avec
@@ -112,16 +119,47 @@ fois, sinon son identifiant Twitch est inconnu.
 
 ### Noter un moment fort
 
-Réservé au **streamer et aux modérateurs** :
+Ouvert à **tous les viewers** :
 
 ```
 !moment victoire contre Messmer après 37 tentatives
 ```
 
 La ligne est ajoutée à la section « Moments forts » de `stream_report.json`,
-précédée de l'heure d'envoi du message (`- 22h15 : victoire contre Messmer…`).
-Le texte est écrit tel quel, sans passer par le modèle. Ces moments servent
-ensuite aux recommandations stratégiques (`src/tools/strategy.py`) une fois
+précédée de l'heure d'envoi du message et suivie de son auteur
+(`- 22h15 : victoire contre Messmer… (kevinaigre)`). Le texte est écrit tel
+quel, sans passer par le modèle. Un même viewer ne peut noter qu'un moment
+toutes les `moment_cooldown` secondes ; les suivants sont ignorés sans réponse.
+
+### Pics d'activité
+
+Sensai note aussi tout seul un moment fort quand le chat s'emballe :
+
+```
+- 22h16 : pic d'activité dans le chat (42 messages en 10 s)
+```
+
+Le seuil s'adapte à l'audience. L'agent étant connecté en anonyme, il n'a pas
+accès au nombre réel de viewers : il compte à la place les **chatteurs
+actifs**, ceux qui ont écrit pendant les `burst_audience_window` dernières
+secondes. Un pic est noté quand au moins
+`max(burst_min_messages, chatteurs actifs × burst_ratio)` messages arrivent en
+`burst_window` secondes. Avec les valeurs par défaut (10 s, ratio 0,5,
+minimum 8) :
+
+| Chatteurs actifs | Messages en 10 s pour un pic |
+|---|---|
+| 5 | 8 |
+| 40 | 20 |
+| 300 | 150 |
+
+Après un pic, aucun autre n'est noté pendant `burst_cooldown` secondes, pour
+qu'une même vague ne soit pas comptée plusieurs fois. Rien n'est détecté
+pendant les `burst_audience_window` premières secondes après le lancement de
+l'agent, le temps de mesurer l'audience.
+
+Les moments forts, notés à la main ou détectés, servent ensuite aux
+recommandations stratégiques (`src/tools/strategy.py`) une fois
 le compte-rendu archivé.
 
 ### Chercher sur le web
@@ -219,5 +257,8 @@ message. Un lancement de l'agent correspond à une visite.
   l'URL du premier résultat est alors ajoutée d'office, sans garantie qu'elle
   soit celle qui a servi. DDGS échoue aussi par intermittence ; une seconde
   recherche avec la question brute est tentée avant d'abandonner.
+- **Pics d'activité sans contexte.** Le contenu des messages n'étant pas
+  stocké, un pic est noté sans dire ce qui l'a provoqué ; un `!moment` permet
+  de préciser.
 - **Pas de personnalité.** Sensai répond comme un assistant générique
   (voir #47).

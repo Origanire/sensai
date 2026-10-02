@@ -12,6 +12,7 @@ Projet réalisé dans le cadre du cursus Epitech (PGE3 — G-AIA-500-MAR-5-1).
 - [Installation](#installation)
 - [Configuration](#configuration)
 - [Utilisation](#utilisation)
+- [Internet agent — rapports automatiques](#internet-agent--rapports-automatiques)
 - [Connecter Twitch et OBS](#connecter-twitch-et-obs)
 - [Communication inter-agents](#communication-inter-agents)
 - [Fonctionnalités implémentées](#fonctionnalités-implémentées)
@@ -133,6 +134,99 @@ print(count_chunks(conn))  # nombre total de chunks stockés
 ```
 
 Chaque document est découpé en chunks, chacun transformé en embedding (vecteur de 768 dimensions via `nomic-embed-text`), puis stocké dans une base SQLite locale (`sensai.db`) aux côtés de son texte d'origine.
+
+---
+
+## Internet agent — rapports automatiques
+
+Sensai peut faire de la veille tout seul : à intervalle régulier, il cherche
+chaque sujet configuré sur le web (DuckDuckGo), puis le modèle résume les
+résultats en un rapport Markdown. Les rapports sont générés en tâche de fond :
+le chat reste utilisable pendant ce temps.
+
+### Configurer les sujets et l'intervalle
+
+Dans `config.yaml` :
+
+```yaml
+scheduled_reports:
+  topics:
+    - "actualités Elden Ring"
+    - "nouveautés Twitch streamers"
+  interval_minutes: 60
+  folder: reports/
+```
+
+| Clé | Description | Défaut |
+|---|---|---|
+| `topics` | Sujets à surveiller, un rapport par sujet et par cycle | aucun |
+| `interval_minutes` | Temps entre le début de deux cycles (décimales acceptées) | `60` |
+| `folder` | Dossier des rapports, créé s'il n'existe pas | `reports/` |
+
+Si la section est absente, les valeurs par défaut s'appliquent. Sans sujet,
+`/reports start` refuse de démarrer. La config est relue à chaque
+`/reports start`.
+
+### Démarrer et arrêter
+
+Dans la CLI (`python3 -m src.cli`) :
+
+| Commande | Effet |
+|---|---|
+| `/reports start` | lance la boucle ; le premier cycle démarre immédiatement |
+| `/reports status` | indique si la boucle tourne, le cycle en cours ou le prochain, le dernier rapport et la dernière erreur |
+| `/reports stop` | arrête la boucle (le rapport en cours d'écriture est terminé d'abord) |
+
+```
+Toi : /reports start
+Rapports automatiques lancés : 2 sujet(s), toutes les 60 min, dans reports/
+Toi : quelle est la capitale de la France ?
+Sensai : La capitale de la France est Paris.
+Toi :
+[Rapports] « actualités Elden Ring » -> reports/report_actualites-elden-ring_2026-10-02_12h53.md
+Toi : /reports stop
+Rapports automatiques arrêtés.
+```
+
+Quitter la CLI arrête aussi la boucle.
+
+### Exemple de rapport
+
+Un fichier par sujet et par cycle, `report_<sujet>_<AAAA-MM-JJ>_<HHhMM>.md` :
+
+```markdown
+# Rapport de veille : actualités Elden Ring
+
+_Généré le 02/10/2026 à 12h53 — requête : « Elden Ring actualités »_
+
+## Points clés
+
+- Le jeu Elden Ring reçoit une mise à jour importante, la 1.17, avec de nouvelles classes, de l'armoire révisée et des ajustements de PvP, selon le site Lacremedugaming.fr [5].
+- Des actualités récentes sur Elden Ring sont disponibles sur plusieurs sites, notamment VGTimes, ActuGaming.net, jeuxvideo.com et Bandai Namco Europe [1, 3, 4, 2].
+- ...
+
+## Sources
+
+1. [Actualités Elden Ring — dernières news et mises à jour (octobre 2026)](https://fr.vgtimes.com/games/elden-ring/news/)
+2. ...
+5. [Elden Ring reçoit sa première grosse mise à jour depuis près de deux ...](https://www.lacremedugaming.fr/jeux/elden-ring/...)
+```
+
+Le titre, la date et les sources sont écrits par le code à partir des vrais
+résultats de recherche ; le modèle ne rédige que les 3 à 5 points clés, chacun
+renvoyant au numéro de sa source.
+
+### En cas d'erreur
+
+- **Pas de réseau / recherche vide** et **Ollama indisponible** : le sujet est
+  sauté pour ce cycle, l'erreur est affichée et visible dans
+  `/reports status`, et la boucle réessaie au cycle suivant.
+- **Limite :** un modèle 3B résume parfois mal un extrait (date ou chiffre
+  mal interprété). Les sources sont là pour vérifier avant d'en parler en
+  stream.
+
+Les user stories de la fonctionnalité sont dans
+[`doc/user_stories.md`](doc/user_stories.md).
 
 ---
 
@@ -276,6 +370,7 @@ viewer ──!search <question>──> Agent Chat ──ask_internet()──> Ag
 
 ### Fonctionnalités additionnelles
 
+- [x] Internet agent : rapports de veille web automatiques et planifiés (#41)
 - [x] Communication Chat <-> Internet : commande `!search` dans le chat Twitch (#43)
 - [x] Communication OBS <-> Internet : overlay texte mis à jour à chaque recherche (#44)
 

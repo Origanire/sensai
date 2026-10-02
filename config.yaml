@@ -8,6 +8,16 @@ max_tokens: 1024
 # 0 = très déterministe / répétitif, 1 = très créatif / aléatoire
 temperature: 0.7
 
+# Internet agent : rapports de veille automatiques (/reports start|stop|status)
+# Chaque sujet est recherché sur le web puis résumé, toutes les
+# interval_minutes minutes. Un fichier report_<sujet>_<date>.md par sujet.
+scheduled_reports:
+  topics:
+    - "actualités Elden Ring"
+    - "nouveautés Twitch streamers"
+  interval_minutes: 60
+  folder: reports/
+
 # Agent Internet appelé par les autres agents (!search dans le chat).
 # cooldown_seconds : délai minimum entre deux !search, tous viewers confondus.
 internet_agent:
