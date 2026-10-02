@@ -36,22 +36,37 @@ def export_md(messages: list[dict[str, str]]) -> str:
     now: datetime = datetime.now()
     export_datetime: str = now.strftime("%d/%m/%Y %H:%M")
 
-    export_filename: Path = (
-        EXPORT_DIR / now.strftime("SensaiChat_%Y-%m-%d_%H-%M")
-    ).with_suffix(".md")
-
     export_string: str = f"# Sensai CLI Chat conversation export {export_datetime}\n"
-
     for message in messages:
         role = message["role"]
         content = message["content"]
         export_string += f"## {role}\n{content}\n\n"
 
-    EXPORT_DIR.mkdir(exist_ok=True)
-    with open(export_filename, "w", encoding="utf-8") as file:
-        file.write(export_string)
+    export_filename = write_export_file(export_string, ".md")
 
     return f"Markdown chat export successful at '{export_filename}'."
+
+
+## @brief Write serialized content to a timestamped file in exports/.
+#
+# Creates the exports/ folder if needed, then writes the content to a
+# file named after the current date and time, with the given extension.
+#
+# @param content Serialized conversation text.
+# @param extension File extension, with the leading dot (e.g. ".md").
+# @return Path of the created file.
+def write_export_file(content: str, extension: str):
+    now: datetime = datetime.now()
+
+    export_filename: Path = (
+        EXPORT_DIR / now.strftime("SensaiChat_%Y-%m-%d_%H-%M")
+    ).with_suffix(extension)
+
+    EXPORT_DIR.mkdir(exist_ok=True)
+    with open(export_filename, "w", encoding="utf-8") as file:
+        file.write(content)
+    return export_filename
+
 
 ## @brief Export the conversation to a JSON file.
 #
@@ -63,16 +78,6 @@ def export_md(messages: list[dict[str, str]]) -> str:
 # @param messages Conversation history (list of "role"/"content" dicts).
 # @return Confirmation message showing the path of the created file.
 def export_json(messages: list[dict[str, str]]) -> str:
-    now: datetime = datetime.now()
-
-    export_filename: Path = (
-        EXPORT_DIR / now.strftime("SensaiChat_%Y-%m-%d_%H-%M")
-    ).with_suffix(".json")
-
     export_content = dumps(messages, indent=2, ensure_ascii=False)
-
-    EXPORT_DIR.mkdir(exist_ok=True)
-    with open(export_filename, "w", encoding="utf-8") as file:
-        file.write(export_content)
-
+    export_filename = write_export_file(export_content, ".json")
     return f"JSON chat export successful at '{export_filename}'."
