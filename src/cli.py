@@ -38,7 +38,7 @@ def main():
 
             messages.append({"role": "user", "content": user_input})
             messages.append({"role": "system", "content": system_message})
-            continue # Continue is here to avoid sending the command to the model
+            continue # Continue is here to avoid sending commands to the model
 
         messages.append({"role": "user", "content": user_input})
 
