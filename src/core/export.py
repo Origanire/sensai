@@ -3,6 +3,7 @@
 
 from datetime import datetime
 from pathlib import Path
+from json import dumps
 
 ## @brief Export folder, anchored to the repository root regardless of the
 # directory the CLI is launched from.
@@ -34,7 +35,11 @@ def export_pdf(messages: list[dict[str, str]]) -> str:
 def export_md(messages: list[dict[str, str]]) -> str:
     now: datetime = datetime.now()
     export_datetime: str = now.strftime("%d/%m/%Y %H:%M")
-    export_filename: Path = EXPORT_DIR / now.strftime("SensaiChat_%Y-%m-%d_%H-%M.md")
+
+    export_filename: Path = (
+        EXPORT_DIR / now.strftime("SensaiChat_%Y-%m-%d_%H-%M")
+    ).with_suffix(".md")
+
     export_string: str = f"# Sensai CLI Chat conversation export {export_datetime}\n"
 
     for message in messages:
@@ -46,11 +51,28 @@ def export_md(messages: list[dict[str, str]]) -> str:
     with open(export_filename, "w", encoding="utf-8") as file:
         file.write(export_string)
 
-    return f"Export successful at '{export_filename}'."
+    return f"Markdown chat export successful at '{export_filename}'."
 
-## @brief Export the conversation to JSON (not implemented).
+## @brief Export the conversation to a JSON file.
+#
+# The conversation history is serialized as-is: a JSON array of
+# "role"/"content" dicts. The file is created in the exports/ folder at
+# the repository root, under a timestamped name to keep successive
+# exports distinct.
 #
 # @param messages Conversation history (list of "role"/"content" dicts).
-# @return Message stating the function is not yet implemented.
+# @return Confirmation message showing the path of the created file.
 def export_json(messages: list[dict[str, str]]) -> str:
-    return "'export_json()' not yet implemented."
+    now: datetime = datetime.now()
+
+    export_filename: Path = (
+        EXPORT_DIR / now.strftime("SensaiChat_%Y-%m-%d_%H-%M")
+    ).with_suffix(".json")
+
+    export_content = dumps(messages, indent=2, ensure_ascii=False)
+
+    EXPORT_DIR.mkdir(exist_ok=True)
+    with open(export_filename, "w", encoding="utf-8") as file:
+        file.write(export_content)
+
+    return f"JSON chat export successful at '{export_filename}'."
