@@ -36,8 +36,8 @@ def main():
             system_message = commands(user_input, messages)
             print(system_message)
 
-            messages.append({"role": "system", "content": system_message})
             messages.append({"role": "user", "content": user_input})
+            messages.append({"role": "system", "content": system_message})
             continue # Continue is here to avoid sending the command to the model
 
         messages.append({"role": "user", "content": user_input})
