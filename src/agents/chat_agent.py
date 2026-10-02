@@ -8,6 +8,7 @@ from src.core.ollama_client import OllamaClient, load_config
 from src.core.prompts import load_prompt
 from src.tools.twitch_chat import connect, messages
 from src.tools.report import add_moment
+from src.tools.burst import BurstDetector
 from src.core.memory import (
     init_memory,
     load_facts,
@@ -287,8 +288,8 @@ def answer(client, db_connection, viewer_id, state, question, template):
 
 ## @brief Entry point of the chat agent.
 #
-# Loops over chat messages: tracks everyone's activity, runs moderator
-# commands, and replies to those who mention Sensai. No content is
+# Loops over chat messages: tracks everyone's activity, logs chat bursts
+# as highlights, runs commands, and replies to those who mention Sensai. No content is
 # recorded for messages not addressed to it.
 def main():
     config = load_config()
@@ -303,6 +304,8 @@ def main():
     moment_command = agent_config["moment_command"]
     moment_saved_message = agent_config["moment_saved_message"]
     moment_usage_message = agent_config["moment_usage_message"]
+    moment_cooldown = agent_config["moment_cooldown"]
+    burst_description = agent_config["burst_description"]
     token_budget = agent_config["history_token_budget"]
 
     context_template = load_prompt("viewer_context")
@@ -313,6 +316,14 @@ def main():
     sock = connect(channel)
     viewers = {}
     activity = {}
+    last_moment = {}
+    burst = BurstDetector(
+        window=agent_config["burst_window"],
+        audience_window=agent_config["burst_audience_window"],
+        ratio=agent_config["burst_ratio"],
+        min_messages=agent_config["burst_min_messages"],
+        cooldown=agent_config["burst_cooldown"],
+    )
 
     print(f"Listening on #{channel}, trigger \"{trigger}\". Ctrl+C to quit.\n")
 
@@ -326,9 +337,20 @@ def main():
                     message["author"],
                     message["display_name"],
                 )
-            session = track_activity(
-                activity, viewer_id, message_time(message)
-            )
+            sent_at = message_time(message)
+            session = track_activity(activity, viewer_id, sent_at)
+
+            detected = burst.add(viewer_id, sent_at)
+            if detected is not None:
+                count, threshold, audience = detected
+                line = add_moment(
+                    burst_description.format(count=count, window=burst.window),
+                    sent_at,
+                )
+                print(
+                    f"[burst] {count} messages >= {threshold} "
+                    f"({audience} active chatters) -> {line}"
+                )
 
             command = parse_command(message["text"], command_prefix)
             if command is not None:
@@ -341,11 +363,15 @@ def main():
                             print(f"Sensai : @{author} {viewer_not_found_message}")
                         else:
                             print(f"Sensai : @{author} {fact_saved_message}")
-                    elif name == moment_command and message["is_moderator"]:
+                    elif name == moment_command:
+                        previous = last_moment.get(viewer_id)
                         if not arguments:
                             print(f"Sensai : @{author} {moment_usage_message}")
+                        elif previous is not None and sent_at - previous < moment_cooldown:
+                            print(f"[moment] {author} ignored (cooldown)")
                         else:
-                            line = add_moment(arguments, message_time(message))
+                            last_moment[viewer_id] = sent_at
+                            line = add_moment(f"{arguments} ({author})", sent_at)
                             print(f"[moment] {line}")
                             print(f"Sensai : @{author} {moment_saved_message}")
                 except Exception as error:
