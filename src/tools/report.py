@@ -1,12 +1,12 @@
 ## @file report.py
-# @brief Compte-rendu de stream vivant : mise à jour section par section via le modèle.
+# @brief Living stream report: updated section by section by the model.
 
 import json
 import os
 from datetime import datetime
 
 
-## @brief Sections du compte-rendu et leur contenu par défaut.
+## @brief Sections of the report and their default contents.
 DEFAULT_SECTIONS = {
     "resume": "Aucun résumé pour le moment.",
     "jeu_actuel": "Aucun jeu en cours pour le moment.",
@@ -14,7 +14,7 @@ DEFAULT_SECTIONS = {
     "stats": "Aucune statistique pour le moment."
 }
 
-## @brief Titres Markdown affichés pour chaque section.
+## @brief Markdown titles displayed for each section.
 SECTION_TITLES = {
     "resume": "Résumé",
     "jeu_actuel": "Jeu actuel",
@@ -23,38 +23,38 @@ SECTION_TITLES = {
 }
 
 
-## @brief Crée le fichier du compte-rendu s'il n'existe pas encore.
+## @brief Create the report file if it does not exist yet.
 #
-# @param path Chemin du fichier JSON du compte-rendu.
-# @return Dictionnaire du compte-rendu chargé depuis le fichier.
+# @param path Path of the report's JSON file.
+# @return The report dictionary loaded from the file.
 def init_report(path="stream_report.json"):
     if not os.path.exists(path):
         save_report(dict(DEFAULT_SECTIONS), path)
     return load_report(path)
 
 
-## @brief Charge le compte-rendu depuis le fichier JSON.
+## @brief Load the report from its JSON file.
 #
-# @param path Chemin du fichier JSON du compte-rendu.
-# @return Dictionnaire section -> contenu.
+# @param path Path of the report's JSON file.
+# @return Dictionary section -> content.
 def load_report(path="stream_report.json"):
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
-## @brief Sauvegarde le compte-rendu dans le fichier JSON.
+## @brief Save the report to its JSON file.
 #
-# @param report Dictionnaire section -> contenu.
-# @param path Chemin du fichier JSON du compte-rendu.
+# @param report Dictionary section -> content.
+# @param path Path of the report's JSON file.
 def save_report(report, path="stream_report.json"):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2, ensure_ascii=False)
 
 
-## @brief Transforme le compte-rendu en texte Markdown lisible.
+## @brief Turn the report into readable Markdown text.
 #
-# @param report Dictionnaire section -> contenu.
-# @return Compte-rendu au format Markdown.
+# @param report Dictionary section -> content.
+# @return The report in Markdown format.
 def render_report(report):
     lines = ["# Compte-rendu de stream", ""]
     for key, title in SECTION_TITLES.items():
@@ -64,16 +64,16 @@ def render_report(report):
     return "\n".join(lines)
 
 
-## @brief Demande au modèle quelle section modifier suite à un événement.
+## @brief Ask the model which section to update after an event.
 #
-# Le modèle reçoit l'événement et le contenu actuel de chaque section, et
-# doit répondre uniquement avec un JSON {"section": ..., "content": ...},
-# où "content" est le texte complet de la section après modification.
+# The model receives the event and the current contents of each section,
+# and must answer only with a JSON {"section": ..., "content": ...},
+# where "content" is the full text of the section after the update.
 #
-# @param event_description Événement du stream en texte libre.
-# @param report Compte-rendu actuel (dictionnaire section -> contenu).
-# @param client Client Ollama utilisé pour le chat.
-# @return Dict {"section": ..., "content": ...}, ou None en cas d'erreur.
+# @param event_description The stream event, as free text.
+# @param report Current report (dictionary section -> content).
+# @param client Ollama client used for chat.
+# @return Dict {"section": ..., "content": ...}, or None on error.
 def generate_update(event_description, report, client):
     current = "\n\n".join(
         f'- "{key}" ({SECTION_TITLES[key]}) :\n{report.get(key, DEFAULT_SECTIONS[key])}'
@@ -100,7 +100,7 @@ Aucun texte avant ou après le JSON."""
     if response is None:
         return None
 
-    # Retire un éventuel bloc de code Markdown (```json ... ```) autour du JSON
+    # Strip a possible Markdown code block (```json ... ```) around the JSON
     text = response.strip()
     if text.startswith("```"):
         text = text.strip("`").strip()
@@ -124,11 +124,11 @@ Aucun texte avant ou après le JSON."""
     return {"section": update["section"], "content": update["content"]}
 
 
-## @brief Applique une mise à jour à une seule section du compte-rendu.
+## @brief Apply an update to a single section of the report.
 #
-# @param report Compte-rendu actuel (dictionnaire section -> contenu).
-# @param update Dict {"section": ..., "content": ...}, ou None.
-# @return Compte-rendu modifié (inchangé si update est None).
+# @param report Current report (dictionary section -> content).
+# @param update Dict {"section": ..., "content": ...}, or None.
+# @return The modified report (unchanged if update is None).
 def apply_update(report, update):
     if update is None:
         return report
@@ -136,21 +136,21 @@ def apply_update(report, update):
     return report
 
 
-## @brief Ajoute un moment fort horodaté au compte-rendu.
+## @brief Append a timestamped highlight to the report.
 #
-# Le texte est écrit tel quel dans la section "moments_forts", sans passer
-# par le modèle : il vient d'un humain (commande !moment), il n'y a donc
-# rien à reformuler ni de section à deviner.
+# The text is written as-is into the "moments_forts" section, without
+# going through the model: it comes from a human (!moment command),
+# so there is nothing to rephrase and no section to guess.
 #
-# @param description Description du moment, telle que tapée dans le chat.
-# @param timestamp Horodatage du moment, en secondes.
-# @param path Chemin du fichier JSON du compte-rendu.
-# @return Ligne ajoutée, par exemple "- 22h15 : victoire contre Messmer".
+# @param description Description of the moment, as typed in the chat.
+# @param timestamp Timestamp of the moment, in seconds.
+# @param path Path of the report's JSON file.
+# @return The added line, e.g. "- 22h15 : victoire contre Messmer".
 def add_moment(description, timestamp, path="stream_report.json"):
     report = init_report(path)
     line = f"- {datetime.fromtimestamp(timestamp).strftime('%Hh%M')} : {description}"
 
-    # Le texte par défaut est remplacé par le premier moment, pas complété
+    # The default text is replaced by the first moment, not appended to
     current = report.get("moments_forts", DEFAULT_SECTIONS["moments_forts"])
     if current == DEFAULT_SECTIONS["moments_forts"]:
         report["moments_forts"] = line
@@ -161,15 +161,15 @@ def add_moment(description, timestamp, path="stream_report.json"):
     return line
 
 
-## @brief Met à jour le compte-rendu à partir d'un événement du stream.
+## @brief Update the report from a stream event.
 #
-# Charge (ou initialise) le compte-rendu, demande la mise à jour au modèle,
-# l'applique à la section concernée puis sauvegarde le fichier.
+# Loads (or initializes) the report, asks the model for the update,
+# applies it to the relevant section, then saves the file.
 #
-# @param event_description Événement du stream en texte libre.
-# @param client Client Ollama utilisé pour le chat.
-# @param path Chemin du fichier JSON du compte-rendu.
-# @return Compte-rendu mis à jour.
+# @param event_description The stream event, as free text.
+# @param client Ollama client used for chat.
+# @param path Path of the report's JSON file.
+# @return The updated report.
 def update_report_from_event(event_description, client, path="stream_report.json"):
     report = init_report(path)
     update = generate_update(event_description, report, client)

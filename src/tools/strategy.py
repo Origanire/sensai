@@ -1,6 +1,6 @@
 ## @file strategy.py
-# @brief Recommandations stratégiques basées sur l'historique des streams :
-# archivage des comptes-rendus, ingestion RAG et génération de conseils.
+# @brief Strategic recommendations based on stream history: report
+# archiving, RAG ingestion and advice generation.
 
 import json
 import os
@@ -13,15 +13,15 @@ from src.core.search import search
 from src.tools.report import render_report
 
 
-## @brief Requête utilisée pour retrouver les passages utiles de l'historique.
+## @brief Query used to retrieve the useful passages of the history.
 STRATEGY_QUERY = "stratégie performance stream catégories viewers moments forts"
 
 
-## @brief Archive le compte-rendu du stream actuel sous un nom horodaté.
+## @brief Archive the current stream's report under a timestamped name.
 #
-# @param current_path Chemin du compte-rendu du stream en cours.
-# @param archive_dir Dossier d'archivage des comptes-rendus passés.
-# @return Chemin du fichier archivé, ou None si aucun compte-rendu n'existait.
+# @param current_path Path of the report of the ongoing stream.
+# @param archive_dir Directory where past reports are archived.
+# @return Path of the archived file, or None if no report existed.
 def archive_current_report(current_path="stream_report.json", archive_dir="reports"):
     os.makedirs(archive_dir, exist_ok=True)
 
@@ -34,15 +34,15 @@ def archive_current_report(current_path="stream_report.json", archive_dir="repor
     return archive_path
 
 
-## @brief Ingère tous les comptes-rendus archivés dans la base vectorielle.
+## @brief Ingest every archived report into the vector database.
 #
-# Chaque compte-rendu est rendu en Markdown, découpé en chunks, embeddé
-# puis sauvegardé avec le nom du fichier comme source.
+# Each report is rendered to Markdown, split into chunks, embedded,
+# then saved with the file name as the source.
 #
-# @param client Client Ollama utilisé pour les embeddings.
-# @param conn Connexion SQLite où stocker les chunks.
-# @param archive_dir Dossier contenant les comptes-rendus archivés.
-# @return Dict {nom_de_fichier: nombre_de_chunks}.
+# @param client Ollama client used for the embeddings.
+# @param conn SQLite connection where to store the chunks.
+# @param archive_dir Directory holding the archived reports.
+# @return Dict {filename: number_of_chunks}.
 def ingest_past_reports(client, conn, archive_dir="reports"):
     results = {}
 
@@ -65,7 +65,7 @@ def ingest_past_reports(client, conn, archive_dir="reports"):
             print(f"[Erreur] Impossible de lire {filename} : {e}")
             continue
 
-        # Le rendu Markdown garde les titres de section, utiles au modèle
+        # The Markdown rendering keeps the section titles, useful to the model
         text = render_report(report)
         chunks = chunk_text(text, chunk_size=500, overlap=50)
         embedded = embed_chunks(chunks, client)
@@ -77,15 +77,15 @@ def ingest_past_reports(client, conn, archive_dir="reports"):
     return results
 
 
-## @brief Génère des recommandations stratégiques à partir des streams passés.
+## @brief Generate strategic recommendations from past streams.
 #
-# Récupère les passages les plus pertinents de l'historique, puis demande au
-# modèle des recommandations fondées uniquement sur ce contexte.
+# Retrieves the most relevant passages of the history, then asks the
+# model for recommendations based only on that context.
 #
-# @param client Client Ollama (embedding de la requête + chat).
-# @param conn Connexion SQLite contenant les chunks des streams passés.
-# @param top_k Nombre de chunks injectés dans le contexte.
-# @return Recommandations du modèle, ou un message si l'historique est vide.
+# @param client Ollama client (query embedding + chat).
+# @param conn SQLite connection holding the chunks of past streams.
+# @param top_k Number of chunks injected into the context.
+# @return The model's recommendations, or a message if the history is empty.
 def generate_strategy_recommendations(client, conn, top_k=5):
     results = search(STRATEGY_QUERY, client, conn, top_k=top_k)
 
@@ -93,7 +93,7 @@ def generate_strategy_recommendations(client, conn, top_k=5):
         return ("Aucun historique de stream disponible. Archive d'abord au moins un "
                 "stream (archive_current_report) puis ingère-le (ingest_past_reports).")
 
-    # Chaque extrait est précédé de son fichier source pour distinguer les streams
+    # Each excerpt is preceded by its source file to tell the streams apart
     context = "\n\n".join(
         f"[Source : {chunk['source']}]\n{chunk['text']}" for score, chunk in results
     )

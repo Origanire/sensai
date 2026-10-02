@@ -1,16 +1,16 @@
 ## @file storage.py
-# @brief Stockage et lecture des chunks embeddés dans une base SQLite locale.
+# @brief Storage and retrieval of embedded chunks in a local SQLite database.
 
 import sqlite3
 import json
 
 
-## @brief Ouvre (ou crée) la base SQLite contenant les chunks.
+## @brief Open (or create) the SQLite database holding the chunks.
 #
-# Crée la table "chunks" si elle n'existe pas encore.
+# Creates the "chunks" table if it does not exist yet.
 #
-# @param path Chemin du fichier de base de données.
-# @return Connexion SQLite ouverte.
+# @param path Path of the database file.
+# @return Open SQLite connection.
 def init_db(path="sensai.db"):
     conn = sqlite3.connect(path)
     cursor = conn.cursor()
@@ -28,11 +28,11 @@ def init_db(path="sensai.db"):
     return conn
 
 
-## @brief Enregistre des chunks embeddés pour une source donnée.
+## @brief Save embedded chunks for a given source.
 #
-# @param conn Connexion SQLite ouverte.
-# @param source Nom du fichier source.
-# @param embedded_chunks Liste de dicts {"text", "embedding"}.
+# @param conn Open SQLite connection.
+# @param source Name of the source file.
+# @param embedded_chunks List of {"text", "embedding"} dicts.
 def save_chunks(conn, source, embedded_chunks):
     cursor = conn.cursor()
 
@@ -47,10 +47,10 @@ def save_chunks(conn, source, embedded_chunks):
     conn.commit()
 
 
-## @brief Charge l'ensemble des chunks stockés en base.
+## @brief Load every chunk stored in the database.
 #
-# @param conn Connexion SQLite ouverte.
-# @return Liste de dicts {"id", "source", "text", "embedding"}.
+# @param conn Open SQLite connection.
+# @return List of {"id", "source", "text", "embedding"} dicts.
 def load_all_chunks(conn):
     cursor = conn.cursor()
     cursor.execute("SELECT id, source, text, embedding FROM chunks")
@@ -69,10 +69,10 @@ def load_all_chunks(conn):
     return chunks
 
 
-## @brief Compte le nombre total de chunks stockés.
+## @brief Count the total number of stored chunks.
 #
-# @param conn Connexion SQLite ouverte.
-# @return Nombre de chunks en base.
+# @param conn Open SQLite connection.
+# @return Number of chunks in the database.
 def count_chunks(conn):
     cursor = conn.cursor()
     cursor.execute("SELECT COUNT(*) FROM chunks")

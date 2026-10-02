@@ -1,18 +1,17 @@
 ## @file cli.py
-# @brief Chatbot CLI : boucle de conversation interactive avec Ollama.
+# @brief Sensai CLI chatbot: interactive conversation loop with Ollama.
 
 from src.core.ollama_client import OllamaClient
 from src.commands import commands
 
-## @brief Point d'entrée du chatbot CLI.
+## @brief Entry point of the Sensai CLI chatbot.
 #
-# Boucle de lecture interactive : lit l'entrée utilisateur, envoie
-# l'historique complet au modèle via Ollama et affiche la réponse en
-# streaming. L'historique de conversation est conservé pendant toute
-# la session.
+# Interactive read loop: reads user input, sends the full conversation
+# history to the model via Ollama and streams the response. The history
+# is kept in memory for the whole session.
 def main():
     client = OllamaClient()
-    messages = []
+    messages: list[dict[str, str]] = []
 
     print("Sensai CLI — tape 'exit' ou 'quit' pour quitter.\n")
 
