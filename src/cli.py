@@ -3,6 +3,7 @@
 
 from src.core.ollama_client import OllamaClient
 from src.commands import commands
+from src.tools.scheduled_reports import stop_scheduled_reports
 
 ## @brief Entry point of the Sensai CLI chatbot.
 #
@@ -50,6 +51,9 @@ def main():
             continue
 
         messages.append({"role": "assistant", "content": response})
+
+    # Lets a report being written finish instead of cutting the file
+    stop_scheduled_reports()
 
 
 if __name__ == "__main__":
