@@ -1,7 +1,7 @@
 ## @file commands.py
 # @brief system to handle commands
 
-from core.export import export_json, export_md, export_pdf, export_help
+from src.core.export import export_json, export_md, export_pdf, export_help
 
 def export(format: str, messages: list[str]) -> str:
     match format:

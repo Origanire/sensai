@@ -33,6 +33,7 @@ def main():
 
         if user_input.startswith("/"):
             print(commands(user_input, messages))
+            continue
 
         messages.append({"role": "user", "content": user_input})
 
