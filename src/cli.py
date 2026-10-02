@@ -31,9 +31,14 @@ def main():
             print("À bientôt !")
             break
 
+        # Slash Commands
         if user_input.startswith("/"):
-            print(commands(user_input, messages))
-            continue
+            system_message = commands(user_input, messages)
+            print(system_message)
+
+            messages.append({"role": "system", "content": system_message})
+            messages.append({"role": "user", "content": user_input})
+            continue # Continue is here to avoid sending the command to the model
 
         messages.append({"role": "user", "content": user_input})
 

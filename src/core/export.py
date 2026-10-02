@@ -8,6 +8,7 @@ def export_help() -> str:
     return message
 
 def export_pdf(messages: list[str]) -> str:
+    print(messages)
     return "'export_pdf()' not yet implemented."
 
 def export_md(messages: list[str]) -> str:

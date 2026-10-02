@@ -4,6 +4,8 @@
 from src.core.export import export_json, export_md, export_pdf, export_help
 
 def export(format: str, messages: list[str]) -> str:
+    if not messages:
+        return "Nothing to export, the conversation is empty."
     match format:
         case "pdf":
             return export_pdf(messages)
@@ -26,4 +28,3 @@ def commands(user_input: str, messages: list[str]) -> str:
             return export(argv[1], messages)
         case _:
             return "Unknown command."
-    
