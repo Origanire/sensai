@@ -32,3 +32,7 @@ documents/
 # Documentation Doxygen générée (seul doc/Doxyfile est versionné)
 doc/html/
 doc/latex/
+TODO.md
+
+# Exportations des chats
+exports/*.md
