@@ -1,13 +1,30 @@
 ## @file chat_agent.py
 # @brief Twitch chat agent: replies to viewers who mention Sensai, relying
-# on their history and profile.
+# on their history and profile, and forwards !search to the Internet agent.
 
+import os
+import re
+import textwrap
 import time
+
+from dotenv import load_dotenv
 
 from src.core.ollama_client import OllamaClient, load_config
 from src.core.prompts import load_prompt
-from src.tools.twitch_chat import connect, messages
+from src.tools.twitch_chat import (
+    MAX_MESSAGE_LENGTH,
+    connect,
+    messages,
+    send_message,
+)
 from src.tools.report import add_moment
+from src.tools.web_search import (
+    SEARCH_UNAVAILABLE,
+    ask_internet,
+    get_quick_fact,
+    load_internet_settings,
+)
+from src.tools.obs import load_obs_settings, obs_reachable, update_text_source
 from src.core.memory import (
     init_memory,
     load_facts,
@@ -29,6 +46,48 @@ AGENT_CONFIG = "config/chat_agent.yaml"
 KEEP_RECENT_MESSAGES = 4
 ## @brief Value shown in the prompt when a section is empty.
 NOTHING = "(none)"
+## @brief Web addresses in a text, without the punctuation that may follow.
+URL_PATTERN = re.compile(r"https?://[^\s)\]>]+")
+
+
+## @brief Output of Sensai's replies.
+#
+# Every reply is printed in the terminal. When the agent is logged in with
+# a bot account, it is also sent to the Twitch chat; anonymous, the agent
+# stays read-only, as before.
+class ChatOutput:
+    ## @brief Build the output.
+    #
+    # @param sock Socket opened by connect().
+    # @param channel Name of the channel, without the "#".
+    # @param writable True if the socket is logged in with a bot account.
+    def __init__(self, sock, channel, writable):
+        ## @brief Socket of the chat connection.
+        self.sock = sock
+        ## @brief Name of the channel.
+        self.channel = channel
+        ## @brief True if messages can be sent to the chat.
+        self.writable = writable
+
+    ## @brief Send a reply to the chat only, without printing it.
+    #
+    # A sending error is printed and never interrupts the agent.
+    #
+    # @param text Reply to send.
+    def post(self, text):
+        if not self.writable:
+            return
+        try:
+            send_message(self.sock, self.channel, text)
+        except OSError as error:
+            print(f"[chat] envoi impossible : {error}")
+
+    ## @brief Print a reply in the terminal and send it to the chat.
+    #
+    # @param text Reply to display.
+    def say(self, text):
+        print(f"Sensai : {text}")
+        self.post(text)
 
 
 ## @brief In-memory state of a viewer during the session.
@@ -256,6 +315,70 @@ def compress(client, rules, db_connection, viewer_id, state):
     return len(old_messages)
 
 
+## @brief Fit a web answer into a chat message without losing its source.
+#
+# Cutting the end of a long answer would drop the URLs, usually written
+# last. When the answer is too long, its first URL is put back after the
+# truncated text.
+#
+# @param answer Answer from ask_internet().
+# @param limit Maximum length, in characters.
+# @return Text of at most limit characters.
+def format_search_reply(answer, limit):
+    text = " ".join(answer.replace("**", "").split())
+    if len(text) <= limit:
+        return text
+
+    urls = URL_PATTERN.findall(text)
+    if not urls:
+        return textwrap.shorten(text, limit, placeholder="...")
+
+    source = urls[0].rstrip(".,;:")
+    body = textwrap.shorten(text, limit - len(source) - 1, placeholder="...")
+    return f"{body} {source}"
+
+
+## @brief Answer a !search: Chat -> Internet agent -> chat and OBS overlay.
+#
+# The overlay is updated on each !search rather than on a separate timer:
+# a viewer types a question and the answer shows up in the chat then on
+# screen, which can be demonstrated live. The short fact for the overlay
+# is only computed when OBS answers, since it costs a second web search
+# and a model call.
+#
+# @param question Question typed after !search.
+# @param author Display name of the viewer.
+# @param client Ollama client.
+# @param chat ChatOutput.
+# @param internet_settings Settings from load_internet_settings().
+# @param obs_settings Settings from load_obs_settings().
+def search_and_share(question, author, client, chat, internet_settings, obs_settings):
+    print(f"[search] {author} : {question}")
+    result = ask_internet(question, client, internet_settings["max_results"])
+
+    prefix = f"@{author} "
+    chat.say(prefix + format_search_reply(result, MAX_MESSAGE_LENGTH - len(prefix)))
+
+    if result == SEARCH_UNAVAILABLE or not obs_settings["enabled"]:
+        return
+    if not obs_reachable(obs_settings["host"], obs_settings["port"]):
+        print(f"[OBS] injoignable sur {obs_settings['host']}:{obs_settings['port']}, "
+              f"overlay non mis à jour.")
+        return
+
+    fact = get_quick_fact(question, client)
+    if fact == SEARCH_UNAVAILABLE:
+        return
+    if update_text_source(
+        obs_settings["source_name"],
+        fact,
+        obs_settings["host"],
+        obs_settings["port"],
+        obs_settings["password"],
+    ):
+        print(f"[OBS] {obs_settings['source_name']} <- {fact}")
+
+
 ## @brief Make Sensai reply to a viewer and record the exchange.
 #
 # If the model fails, the question is removed from the history so no
@@ -287,12 +410,19 @@ def answer(client, db_connection, viewer_id, state, question, template):
 
 ## @brief Entry point of the chat agent.
 #
-# Loops over chat messages: tracks everyone's activity, runs moderator
-# commands, and replies to those who mention Sensai. No content is
-# recorded for messages not addressed to it.
+# Loops over chat messages: tracks everyone's activity, runs commands,
+# and replies to those who mention Sensai. No content is recorded for
+# messages not addressed to it.
+#
+# The bot account is read from TWITCH_BOT_USERNAME and TWITCH_OAUTH_TOKEN
+# (environment or .env); without them, the agent reads the chat
+# anonymously and its replies only appear in the terminal.
 def main():
+    load_dotenv()
     config = load_config()
     agent_config = load_config(AGENT_CONFIG)
+    internet_settings = load_internet_settings(config)
+    obs_settings = load_obs_settings(config)
 
     channel = agent_config["channel"]
     trigger = agent_config["trigger"]
@@ -303,6 +433,8 @@ def main():
     moment_command = agent_config["moment_command"]
     moment_saved_message = agent_config["moment_saved_message"]
     moment_usage_message = agent_config["moment_usage_message"]
+    search_command = agent_config["search_command"]
+    search_usage_message = agent_config["search_usage_message"]
     token_budget = agent_config["history_token_budget"]
 
     context_template = load_prompt("viewer_context")
@@ -310,11 +442,16 @@ def main():
 
     client = OllamaClient(config)
     db_connection = init_memory()
-    sock = connect(channel)
+    bot_username = os.environ.get("TWITCH_BOT_USERNAME")
+    bot_token = os.environ.get("TWITCH_OAUTH_TOKEN")
+    sock = connect(channel, bot_username, bot_token)
+    chat = ChatOutput(sock, channel, writable=bool(bot_username and bot_token))
     viewers = {}
     activity = {}
+    last_search = None
 
-    print(f"Listening on #{channel}, trigger \"{trigger}\". Ctrl+C to quit.\n")
+    mode = f"as {bot_username}" if chat.writable else "anonymously (read-only)"
+    print(f"Listening on #{channel} {mode}, trigger \"{trigger}\". Ctrl+C to quit.\n")
 
     try:
         for message in messages(sock):
@@ -326,9 +463,8 @@ def main():
                     message["author"],
                     message["display_name"],
                 )
-            session = track_activity(
-                activity, viewer_id, message_time(message)
-            )
+            sent_at = message_time(message)
+            session = track_activity(activity, viewer_id, sent_at)
 
             command = parse_command(message["text"], command_prefix)
             if command is not None:
@@ -338,16 +474,30 @@ def main():
                     if name == remember_command and message["is_moderator"]:
                         target = remember_about(db_connection, viewers, arguments)
                         if target is None:
-                            print(f"Sensai : @{author} {viewer_not_found_message}")
+                            chat.say(f"@{author} {viewer_not_found_message}")
                         else:
-                            print(f"Sensai : @{author} {fact_saved_message}")
+                            chat.say(f"@{author} {fact_saved_message}")
                     elif name == moment_command and message["is_moderator"]:
                         if not arguments:
-                            print(f"Sensai : @{author} {moment_usage_message}")
+                            chat.say(f"@{author} {moment_usage_message}")
                         else:
-                            line = add_moment(arguments, message_time(message))
+                            line = add_moment(arguments, sent_at)
                             print(f"[moment] {line}")
-                            print(f"Sensai : @{author} {moment_saved_message}")
+                            chat.say(f"@{author} {moment_saved_message}")
+                    elif name == search_command:
+                        # Global cooldown: a search blocks the loop for several
+                        # seconds, a per-viewer limit would not protect it
+                        cooldown = internet_settings["cooldown_seconds"]
+                        if not arguments:
+                            chat.say(f"@{author} {search_usage_message}")
+                        elif last_search is not None and sent_at - last_search < cooldown:
+                            print(f"[search] {author} ignoré (cooldown)")
+                        else:
+                            last_search = sent_at
+                            search_and_share(
+                                arguments, author, client, chat,
+                                internet_settings, obs_settings,
+                            )
                 except Exception as error:
                     print(f"[command] {name} a échoué : {error}")
                 continue
@@ -375,6 +525,7 @@ def main():
             )
             if reply is None:
                 continue
+            chat.post(f"@{state.display_name} {reply}")
 
             used = client.last_prompt_tokens
             print(f"[tokens] {used}/{token_budget}")

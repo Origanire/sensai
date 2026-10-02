@@ -12,6 +12,8 @@ Projet réalisé dans le cadre du cursus Epitech (PGE3 — G-AIA-500-MAR-5-1).
 - [Installation](#installation)
 - [Configuration](#configuration)
 - [Utilisation](#utilisation)
+- [Connecter Twitch et OBS](#connecter-twitch-et-obs)
+- [Communication inter-agents](#communication-inter-agents)
 - [Fonctionnalités implémentées](#fonctionnalités-implémentées)
 - [Structure du projet](#structure-du-projet)
 - [Gestion des ressources (Ollama)](#gestion-des-ressources-ollama)
@@ -134,6 +136,126 @@ Chaque document est découpé en chunks, chacun transformé en embedding (vecteu
 
 ---
 
+## Connecter Twitch et OBS
+
+Les deux connexions sont **optionnelles** : sans rien configurer, l'agent chat
+lit le chat en anonyme et répond seulement dans le terminal, et l'overlay OBS
+est sauté. Les secrets se mettent dans un fichier `.env` (non versionné) :
+
+```bash
+cp .env.example .env
+```
+
+### Twitch : faire répondre Sensai dans le chat
+
+1. **Choisir la chaîne** à écouter dans `config/chat_agent.yaml` :
+   ```yaml
+   channel: nom_de_ta_chaine
+   ```
+2. **Créer un compte Twitch pour le bot** (ex. `sensai_bot`). Un compte séparé
+   évite que le bot parle sous le nom du streamer.
+3. **Générer un token OAuth pour ce compte**, connecté en tant que bot, avec
+   les scopes `chat:read` et `chat:edit` (par exemple via
+   [twitchtokengenerator.com](https://twitchtokengenerator.com), « Bot Chat
+   Token »). Copier l'*Access Token*.
+4. **Remplir `.env`** :
+   ```
+   TWITCH_BOT_USERNAME=sensai_bot
+   TWITCH_OAUTH_TOKEN=le_token_copié
+   ```
+   Le préfixe `oauth:` est facultatif. Ne jamais versionner ce fichier.
+5. *(Conseillé)* **Nommer le bot modérateur** de la chaîne en tapant
+   `/mod sensai_bot` dans le chat : Twitch le laisse alors envoyer plus de
+   messages et ignorer le mode lent.
+6. **Lancer l'agent** :
+   ```bash
+   python3 -m src.agents.chat_agent
+   ```
+   La première ligne doit être `Listening on #ta_chaine as sensai_bot`. Si elle
+   indique `anonymously (read-only)`, les variables de `.env` ne sont pas lues.
+7. **Tester** dans le chat : `@sensai salut`, puis `!search date de sortie de
+   Elden Ring Nightreign`.
+
+### OBS : afficher les résultats en overlay
+
+Requiert **OBS 28 ou plus** (le serveur WebSocket est intégré).
+
+1. **Activer le serveur WebSocket** : *Outils > Paramètres du serveur
+   WebSocket* > cocher *Activer le serveur WebSocket*. Garder le port `4455`.
+2. **Mot de passe** : si *Activer l'authentification* est coché, cliquer sur
+   *Afficher les informations de connexion*, copier le mot de passe dans `.env` :
+   ```
+   OBS_WEBSOCKET_PASSWORD=le_mot_de_passe
+   ```
+3. **Créer la source** : dans la scène du stream, *+ > Texte (GDI+)* (ou
+   *Texte (FreeType 2)* sous Linux/macOS), nommée exactement **`SensaiOverlay`**.
+   Le texte de départ n'a pas d'importance, Sensai le remplacera.
+4. **Vérifier `config.yaml`** :
+   ```yaml
+   obs:
+     enabled: true
+     host: localhost
+     port: 4455
+     source_name: SensaiOverlay
+   ```
+5. **Tester la connexion** sans passer par le chat, OBS ouvert :
+   ```bash
+   python3 -c "from dotenv import load_dotenv; load_dotenv(); \
+   from src.core.ollama_client import load_config; \
+   from src.tools.obs import load_obs_settings, update_text_source; \
+   s = load_obs_settings(load_config()); \
+   print(update_text_source(s['source_name'], 'Sensai est connecté', s['host'], s['port'], s['password']))"
+   ```
+   `True` et le texte « Sensai est connecté » à l'écran : c'est prêt. Ensuite,
+   chaque `!search` dans le chat met l'overlay à jour.
+
+> **Sensai dans WSL, OBS sous Windows :** `localhost` n'atteint Windows qu'avec
+> le réseau WSL en mode *mirrored*. Sinon, mettre dans `obs.host` l'IP de
+> Windows, donnée par `ip route show default | awk '{print $3}'`, et autoriser
+> le port 4455 dans le pare-feu Windows.
+
+### En cas de problème
+
+| Message dans le terminal | Cause probable |
+|---|---|
+| `Twitch a refusé la connexion du bot` | token invalide ou expiré, ou nom du bot différent du compte du token |
+| `Listening on ... anonymously (read-only)` | `.env` absent ou `TWITCH_BOT_USERNAME` / `TWITCH_OAUTH_TOKEN` vides |
+| `[OBS] injoignable sur localhost:4455` | OBS fermé, serveur WebSocket désactivé, ou mauvais `obs.host` (WSL) |
+| `[OBS] Source « SensaiOverlay » introuvable` | aucune source de ce nom dans OBS (attention aux majuscules) |
+| `[OBS] OBS a fermé la connexion : mot de passe WebSocket incorrect ?` | `OBS_WEBSOCKET_PASSWORD` différent de celui d'OBS |
+| `[OBS] Connexion refusée par OBS : authentication enabled but no password provided` | authentification activée dans OBS mais pas de mot de passe dans `.env` |
+
+---
+
+## Communication inter-agents
+
+Les agents se parlent par **appels de fonctions directs** (pas de bus de
+messages) : l'agent Chat importe l'interface de l'agent Internet
+(`src/tools/web_search.py`) et le connecteur OBS (`src/tools/obs.py`).
+
+```
+viewer ──!search <question>──> Agent Chat ──ask_internet()──> Agent Internet ──DDGS──> web
+                                   │   <──réponse + source (≤ 500 car.)──┘
+                                   ├──> chat Twitch (@viewer réponse... https://source)
+                                   └──get_quick_fact()──> Agent Internet
+                                         └──fait court (≤ 160 car.)──> OBS : source Texte « SensaiOverlay »
+```
+
+- **`ask_internet(question, client)`** : question → requête → résultats → réponse
+  avec sources. **`get_quick_fact(topic, client)`** : une ou deux phrases pour
+  un overlay. Aucune ne lève d'exception : en cas de panne (réseau, DDGS,
+  Ollama), elles renvoient `"Recherche indisponible pour le moment."`.
+- L'overlay est mis à jour **à chaque `!search`** (pas de minuterie séparée) :
+  c'est démontrable en direct, une question dans le chat s'affiche à l'écran.
+  Si OBS ne répond pas, seul l'overlay est sauté, la réponse chat part quand même.
+- Réglages : sections `internet_agent` (cooldown, nombre de résultats) et `obs`
+  (hôte, port, nom de la source) de `config.yaml`. Les secrets (compte bot
+  Twitch, mot de passe OBS) vont dans `.env`, voir `.env.example`.
+- Mise en place : [Connecter Twitch et OBS](#connecter-twitch-et-obs). Détails
+  et limites : [`doc/chat_agent.md`](doc/chat_agent.md).
+
+---
+
 ## Fonctionnalités implémentées
 
 ### Base Loop (obligatoire)
@@ -154,7 +276,10 @@ Chaque document est découpé en chunks, chacun transformé en embedding (vecteu
 
 ### Fonctionnalités additionnelles
 
-_À venir — voir les [Issues](../../issues) et le [Project board](../../projects) du repo._
+- [x] Communication Chat <-> Internet : commande `!search` dans le chat Twitch (#43)
+- [x] Communication OBS <-> Internet : overlay texte mis à jour à chaque recherche (#44)
+
+_Le reste à venir — voir les [Issues](../../issues) et le [Project board](../../projects) du repo._
 
 ---
 

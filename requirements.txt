@@ -6,3 +6,6 @@ pypdf
 python-docx
 duckduckgo-search
 ddgs
+# Agent Internet <-> Chat / OBS
+obsws-python
+python-dotenv

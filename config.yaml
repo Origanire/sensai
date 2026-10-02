@@ -7,3 +7,21 @@ max_tokens: 1024
 
 # 0 = très déterministe / répétitif, 1 = très créatif / aléatoire
 temperature: 0.7
+
+# Agent Internet appelé par les autres agents (!search dans le chat).
+# cooldown_seconds : délai minimum entre deux !search, tous viewers confondus.
+internet_agent:
+  cooldown_seconds: 30
+  max_results: 5
+
+# Overlay OBS mis à jour à chaque !search (obs-websocket v5, OBS 28+).
+# Dans OBS : Outils > Paramètres du serveur WebSocket > Activer, puis créer
+# une source Texte nommée comme source_name dans la scène.
+# Le mot de passe peut aussi venir de OBS_WEBSOCKET_PASSWORD (.env), qui est
+# prioritaire : évite de le versionner ici.
+obs:
+  enabled: true
+  host: localhost
+  port: 4455
+  password: ""
+  source_name: SensaiOverlay

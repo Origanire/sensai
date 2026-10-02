@@ -7,8 +7,22 @@ mentionnent. Il se souvient de chaque viewer d'un stream à l'autre.
 
 ## Lancer l'agent
 
-Aucun compte Twitch, aucun token : l'agent se connecte au chat **en lecture
-seule et en anonyme**. Il ne peut pas écrire dans le chat.
+Sans configuration, l'agent se connecte au chat **en lecture seule et en
+anonyme** : ses réponses n'apparaissent que dans le terminal.
+
+Pour qu'il **réponde dans le chat**, il lui faut un compte bot Twitch :
+
+1. Créer un compte Twitch dédié au bot (ex. `sensai_bot`).
+2. Générer pour ce compte un token OAuth avec les scopes `chat:read` et
+   `chat:edit` (par exemple via [twitchtokengenerator.com](https://twitchtokengenerator.com)).
+3. Copier `.env.example` en `.env` et remplir `TWITCH_BOT_USERNAME` et
+   `TWITCH_OAUTH_TOKEN`.
+
+Au lancement, l'agent indique `Listening on #chaine as sensai_bot`. Si Twitch
+refuse le token, il s'arrête avec un message qui pointe vers `.env`. Toutes
+les réponses (mention, `!remember`, `!moment`, `!search`) partent alors dans le
+chat ; Twitch coupant à 500 caractères, les messages plus longs sont tronqués
+proprement avec `...`.
 
 ```bash
 ollama serve                       # dans un autre terminal
@@ -39,9 +53,24 @@ Les réglages de cet agent sont dans `config/chat_agent.yaml`, séparés du
 | `moment_command` | nom de la commande de moment fort (`moment`) |
 | `moment_saved_message` | réponse quand un moment fort a été ajouté |
 | `moment_usage_message` | réponse quand `!moment` est tapé sans description |
+| `search_command` | nom de la commande de recherche web (`search`) |
+| `search_usage_message` | réponse quand `!search` est tapé sans question |
 | `history_token_budget` | taille max de l'historique envoyé au modèle |
 
-Le modèle, l'URL d'Ollama et la température restent dans `config.yaml`.
+Le modèle, l'URL d'Ollama et la température restent dans `config.yaml`, avec
+les réglages partagés de l'agent Internet et d'OBS :
+
+| Clé (`config.yaml`) | Rôle |
+|---|---|
+| `internet_agent.cooldown_seconds` | délai minimum entre deux `!search`, tous viewers confondus (30) |
+| `internet_agent.max_results` | résultats web donnés au modèle (5) |
+| `obs.enabled` | met à jour l'overlay OBS à chaque `!search` |
+| `obs.host` / `obs.port` | serveur WebSocket d'OBS (`localhost:4455`) |
+| `obs.password` | mot de passe WebSocket ; `OBS_WEBSOCKET_PASSWORD` dans `.env` est prioritaire |
+| `obs.source_name` | source Texte à mettre à jour (`SensaiOverlay`) |
+
+Sans section `internet_agent` ou `obs`, des valeurs par défaut s'appliquent et
+l'overlay est désactivé.
 
 Les instructions données au modèle sont dans `prompts/` :
 
@@ -95,6 +124,46 @@ Le texte est écrit tel quel, sans passer par le modèle. Ces moments servent
 ensuite aux recommandations stratégiques (`src/tools/strategy.py`) une fois
 le compte-rendu archivé.
 
+### Chercher sur le web
+
+Ouvert à **tous les viewers** :
+
+```
+viewer : !search qui a gagné l'elden ring boss rush
+Sensai : @viewer D'après mes recherches, ... https://www.nexusmods.com/eldenring/mods/2905
+```
+
+La question est transmise à l'agent Internet (`ask_internet`), qui cherche
+sur le web et répond en citant sa source. Si la réponse dépasse la limite de
+Twitch, elle est coupée et l'URL de la source est remise à la fin. Si la
+recherche ou le modèle est indisponible, Sensai répond « Recherche
+indisponible pour le moment. ».
+
+Une recherche bloque l'agent plusieurs secondes : un **cooldown global**
+(`internet_agent.cooldown_seconds`) ignore sans réponse les `!search` qui
+arrivent trop tôt, quel que soit le viewer.
+
+### Overlay OBS
+
+À chaque `!search` réussi, un fait court (une ou deux phrases, 160 caractères
+max, `get_quick_fact`) remplace le texte de la source OBS `obs.source_name`.
+
+Mise en place dans OBS (28 ou plus) :
+
+1. *Outils > Paramètres du serveur WebSocket* : cocher *Activer le serveur
+   WebSocket* (port 4455). Si l'authentification est activée, mettre le mot de
+   passe dans `.env` (`OBS_WEBSOCKET_PASSWORD`).
+2. Ajouter à la scène une source *Texte (GDI+)* nommée `SensaiOverlay`.
+
+Si OBS est fermé, l'overlay est simplement sauté (`[OBS] injoignable...` dans
+le terminal) et le fait n'est même pas calculé. Une source introuvable ou un
+mauvais mot de passe sont signalés par un message clair, sans arrêter l'agent.
+
+> **WSL :** si Sensai tourne dans WSL et OBS sous Windows, `localhost` ne
+> pointe vers Windows qu'avec le réseau en mode *mirrored*. Sinon, mettre dans
+> `obs.host` l'IP de Windows (`ip route show default | awk '{print $3}'`) et
+> autoriser le port 4455 dans le pare-feu.
+
 ---
 
 ## Ce que Sensai mémorise
@@ -143,5 +212,12 @@ message. Un lancement de l'agent correspond à une visite.
 - **Le profil ne se remplit qu'à la main**, via `!remember`. L'extraction
   automatique a été testée puis retirée : trop peu fiable avec un modèle 3B
   en direct (voir #52).
+- **`!search` est lent.** Une recherche enchaîne une recherche web et deux à
+  quatre appels au modèle (dont le fait de l'overlay) : comptez 10 à 30 s
+  avec llama3.2, pendant lesquelles le chat n'est pas lu (voir #61).
+- **Sources approximatives.** Le modèle oublie parfois de citer ses sources :
+  l'URL du premier résultat est alors ajoutée d'office, sans garantie qu'elle
+  soit celle qui a servi. DDGS échoue aussi par intermittence ; une seconde
+  recherche avec la question brute est tentée avant d'abandonner.
 - **Pas de personnalité.** Sensai répond comme un assistant générique
   (voir #47).
