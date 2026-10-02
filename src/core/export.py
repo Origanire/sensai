@@ -18,6 +18,26 @@ def export_help() -> str:
     "format : md (markdown), pdf (adobe pdf), json (javascript object notation)\n"
     return message
 
+## @brief Write serialized content to a timestamped file in exports/.
+#
+# Creates the exports/ folder if needed, then writes the content to a
+# file named after the current date and time, with the given extension.
+#
+# @param content Serialized conversation text.
+# @param extension File extension, with the leading dot (e.g. ".md").
+# @return Path of the created file.
+def write_export_file(content: str, extension: str) -> Path:
+    now: datetime = datetime.now()
+
+    export_filename: Path = (
+        EXPORT_DIR / now.strftime("SensaiChat_%Y-%m-%d_%H-%M")
+    ).with_suffix(extension)
+
+    EXPORT_DIR.mkdir(exist_ok=True)
+    with open(export_filename, "w", encoding="utf-8") as file:
+        file.write(content)
+    return export_filename
+
 ## @brief Export the conversation to PDF (not implemented).
 #
 # @param messages Conversation history (list of "role"/"content" dicts).
@@ -45,28 +65,6 @@ def export_md(messages: list[dict[str, str]]) -> str:
     export_filename = write_export_file(export_string, ".md")
 
     return f"Markdown chat export successful at '{export_filename}'."
-
-
-## @brief Write serialized content to a timestamped file in exports/.
-#
-# Creates the exports/ folder if needed, then writes the content to a
-# file named after the current date and time, with the given extension.
-#
-# @param content Serialized conversation text.
-# @param extension File extension, with the leading dot (e.g. ".md").
-# @return Path of the created file.
-def write_export_file(content: str, extension: str):
-    now: datetime = datetime.now()
-
-    export_filename: Path = (
-        EXPORT_DIR / now.strftime("SensaiChat_%Y-%m-%d_%H-%M")
-    ).with_suffix(extension)
-
-    EXPORT_DIR.mkdir(exist_ok=True)
-    with open(export_filename, "w", encoding="utf-8") as file:
-        file.write(content)
-    return export_filename
-
 
 ## @brief Export the conversation to a JSON file.
 #
