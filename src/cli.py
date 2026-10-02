@@ -2,7 +2,7 @@
 # @brief Chatbot CLI : boucle de conversation interactive avec Ollama.
 
 from src.core.ollama_client import OllamaClient
-
+from src.commands import commands
 
 ## @brief Point d'entrée du chatbot CLI.
 #
@@ -30,6 +30,9 @@ def main():
         if user_input.lower() in ("exit", "quit", "q"):
             print("À bientôt !")
             break
+
+        if user_input.startswith("/"):
+            print(commands(user_input, messages))
 
         messages.append({"role": "user", "content": user_input})
 
