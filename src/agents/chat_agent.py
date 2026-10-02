@@ -335,19 +335,22 @@ def main():
             if command is not None:
                 name, arguments = command
                 author = message["display_name"]
-                if name == remember_command and message["is_moderator"]:
-                    target = remember_about(db_connection, viewers, arguments)
-                    if target is None:
-                        print(f"Sensai : @{author} {viewer_not_found_message}")
-                    else:
-                        print(f"Sensai : @{author} {fact_saved_message}")
-                elif name == moment_command and message["is_moderator"]:
-                    if not arguments:
-                        print(f"Sensai : @{author} {moment_usage_message}")
-                    else:
-                        line = add_moment(arguments, message_time(message))
-                        print(f"[moment] {line}")
-                        print(f"Sensai : @{author} {moment_saved_message}")
+                try:
+                    if name == remember_command and message["is_moderator"]:
+                        target = remember_about(db_connection, viewers, arguments)
+                        if target is None:
+                            print(f"Sensai : @{author} {viewer_not_found_message}")
+                        else:
+                            print(f"Sensai : @{author} {fact_saved_message}")
+                    elif name == moment_command and message["is_moderator"]:
+                        if not arguments:
+                            print(f"Sensai : @{author} {moment_usage_message}")
+                        else:
+                            line = add_moment(arguments, message_time(message))
+                            print(f"[moment] {line}")
+                            print(f"Sensai : @{author} {moment_saved_message}")
+                except Exception as error:
+                    print(f"[command] {name} a échoué : {error}")
                 continue
 
             question = match_trigger(message["text"], trigger)
