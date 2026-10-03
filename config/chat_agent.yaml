@@ -64,3 +64,11 @@ burst_description: "pic d'activité dans le chat ({count} messages en {window} s
 # laisser de la place pour la réponse (voir max_tokens dans config.yaml).
 history_token_budget: 2500
 
+
+# Commande qui décrit un événement du stream au modèle, qui met à jour la
+# bonne section du compte-rendu (M4). Réservée au streamer et aux modos.
+# Usage : !event <description>   ex : !event on vient de battre Malenia
+event_command: "event"
+
+# Réponse quand !event est tapé sans description.
+event_usage_message: "usage : !event <description>"

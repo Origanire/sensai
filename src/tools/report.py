@@ -1,5 +1,6 @@
 ## @file report.py
-# @brief Living stream report: updated section by section by the model.
+# @brief Living stream report (M4): updated section by section by the
+# model, through small JSON edits applied by the code.
 
 import json
 import os
@@ -16,7 +17,7 @@ DEFAULT_SECTIONS = {
 
 ## @brief Markdown titles displayed for each section.
 SECTION_TITLES = {
-    "resume": "Résumé",
+    "resume": "Déroulé",
     "jeu_actuel": "Jeu actuel",
     "moments_forts": "Moments forts",
     "stats": "Statistiques"
@@ -64,75 +65,119 @@ def render_report(report):
     return "\n".join(lines)
 
 
-## @brief Ask the model which section to update after an event.
+## @brief Number of edits kept in the report's journal.
+JOURNAL_SIZE = 50
+
+## @brief Kind of event -> (section, action) of the edit applied by the code.
+EVENT_TYPES = {
+    "changement_de_jeu": ("jeu_actuel", "replace"),
+    "moment_fort": ("moments_forts", "append"),
+    "chiffre": ("stats", "append"),
+    "autre": ("resume", "append"),
+}
+
+## @brief JSON schema of the model's answer: Ollama constrains the
+# generation to it, so the answer is always parseable.
+EDIT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "type": {"type": "string", "enum": list(EVENT_TYPES)},
+        "content": {"type": "string"},
+    },
+    "required": ["type", "content"],
+}
+
+
+## @brief Ask the model how a stream event changes the report.
 #
-# The model receives the event and the current contents of each section,
-# and must answer only with a JSON {"section": ..., "content": ...},
-# where "content" is the full text of the section after the update.
+# The model never rewrites the report. It only classifies the event into
+# one of EVENT_TYPES and rephrases it in one line, as a JSON constrained by
+# EDIT_SCHEMA. The code maps the type to a section and an action ("append"
+# a line, or "replace" the current game): a 3B model picks a type
+# reliably, but mixes up sections and actions when asked for them directly.
 #
 # @param event_description The stream event, as free text.
 # @param report Current report (dictionary section -> content).
 # @param client Ollama client used for chat.
-# @return Dict {"section": ..., "content": ...}, or None on error.
+# @return Dict {"section", "action", "content"}, or None on error.
 def generate_update(event_description, report, client):
-    current = "\n\n".join(
-        f'- "{key}" ({SECTION_TITLES[key]}) :\n{report.get(key, DEFAULT_SECTIONS[key])}'
-        for key in DEFAULT_SECTIONS
-    )
+    prompt = f"""Tu tiens le compte-rendu d'un stream de jeu vidéo.
+Classe l'événement dans UN type et reformule-le en une ligne courte.
 
-    prompt = f"""Tu maintiens le compte-rendu d'un stream de jeu vidéo, découpé en sections.
-Un nouvel événement vient de se produire. Choisis LA section la plus concernée et réécris-la.
+Types :
+- "changement_de_jeu" : le streamer commence ou change de jeu. content = le nom du jeu seul.
+- "moment_fort" : un exploit, une victoire, un boss battu, un échec ou une mort marquante.
+- "chiffre" : un nombre de viewers, d'abonnés, de dons, un record chiffré.
+- "autre" : tout le reste (annonce, invité, pause...).
 
-Sections disponibles et leur contenu actuel :
-{current}
+Exemples :
+- "on lance Hades 2" -> {{"type": "changement_de_jeu", "content": "Hades 2"}}
+- "on a enfin tué Malenia !" -> {{"type": "moment_fort", "content": "Malenia battue"}}
+- "on vient de passer les 300 viewers" -> {{"type": "chiffre", "content": "300 viewers atteints"}}
+- "pause de 10 minutes" -> {{"type": "autre", "content": "Pause de 10 minutes"}}
+
+Jeu actuel : {report.get("jeu_actuel", DEFAULT_SECTIONS["jeu_actuel"])}
 
 Événement : {event_description}
 
-Réponds UNIQUEMENT avec un JSON de la forme :
-{{"section": "<une des clés : {', '.join(DEFAULT_SECTIONS)}>", "content": "<nouveau contenu de la section>"}}
+N'ajoute aucune information absente de l'événement."""
 
-Le champ "content" doit être le texte COMPLET de la section après modification
-(contenu actuel conservé et mis à jour), pas seulement ce qui est ajouté.
-Aucun texte avant ou après le JSON."""
-
-    messages = [{"role": "user", "content": prompt}]
-    response = client.chat(messages)
-    if response is None:
+    answer = client.chat_json([{"role": "user", "content": prompt}], EDIT_SCHEMA)
+    if answer is None:
         return None
 
-    # Strip a possible Markdown code block (```json ... ```) around the JSON
-    text = response.strip()
-    if text.startswith("```"):
-        text = text.strip("`").strip()
-        if text.startswith("json"):
-            text = text[len("json"):].strip()
-
-    try:
-        update = json.loads(text)
-    except json.JSONDecodeError:
-        print("[Erreur] Le modèle n'a pas renvoyé un JSON valide.")
+    if answer.get("type") not in EVENT_TYPES:
+        print(f"[Erreur] Type d'événement invalide renvoyé par le modèle (attendu : {', '.join(EVENT_TYPES)}).")
+        return None
+    content = answer.get("content")
+    if not isinstance(content, str) or not content.strip():
+        print("[Erreur] Le champ \"content\" est manquant ou vide.")
         return None
 
-    if not isinstance(update, dict) or update.get("section") not in DEFAULT_SECTIONS:
-        print(f"[Erreur] Section invalide renvoyée par le modèle (attendu : {', '.join(DEFAULT_SECTIONS)}).")
-        return None
-
-    if not isinstance(update.get("content"), str):
-        print("[Erreur] Le champ \"content\" est manquant ou n'est pas un texte.")
-        return None
-
-    return {"section": update["section"], "content": update["content"]}
+    section, action = EVENT_TYPES[answer["type"]]
+    return {"section": section, "action": action, "content": content.strip()}
 
 
-## @brief Apply an update to a single section of the report.
+## @brief Apply an edit to a single section of the report.
+#
+# "append" adds the content as a new line (a timestamped bullet for the
+# highlights), replacing the default placeholder if the section was still
+# empty; "replace" swaps the whole section. Every applied edit is logged
+# in the report's "_journal", so a wrong edit can be traced.
 #
 # @param report Current report (dictionary section -> content).
-# @param update Dict {"section": ..., "content": ...}, or None.
+# @param update Dict {"section", "action", "content"}, or None.
+# @param timestamp Time of the event, in seconds; now if None.
 # @return The modified report (unchanged if update is None).
-def apply_update(report, update):
+def apply_update(report, update, timestamp=None):
     if update is None:
         return report
-    report[update["section"]] = update["content"]
+
+    section = update["section"]
+    content = update["content"]
+    moment = datetime.fromtimestamp(timestamp) if timestamp else datetime.now()
+
+    if update.get("action", "replace") == "append":
+        if section == "moments_forts" and not content.startswith("- "):
+            content = f"- {moment.strftime('%Hh%M')} : {content.lstrip('- ')}"
+        elif not content.startswith("- "):
+            content = f"- {content}"
+        current = report.get(section, DEFAULT_SECTIONS[section])
+        if current == DEFAULT_SECTIONS[section]:
+            report[section] = content
+        else:
+            report[section] = current + "\n" + content
+    else:
+        report[section] = content
+
+    journal = report.setdefault("_journal", [])
+    journal.append({
+        "time": moment.strftime("%Y-%m-%d %H:%M:%S"),
+        "section": section,
+        "action": update.get("action", "replace"),
+        "content": update["content"],
+    })
+    del journal[:-JOURNAL_SIZE]
     return report
 
 
@@ -169,10 +214,27 @@ def add_moment(description, timestamp, path="stream_report.json"):
 # @param event_description The stream event, as free text.
 # @param client Ollama client used for chat.
 # @param path Path of the report's JSON file.
-# @return The updated report.
+# @return A (report, applied edit) pair; the edit is None when the model
+#         failed, and the report is then left unchanged.
 def update_report_from_event(event_description, client, path="stream_report.json"):
     report = init_report(path)
     update = generate_update(event_description, report, client)
+    if update is None:
+        return report, None
     report = apply_update(report, update)
     save_report(report, path)
-    return report
+    return report, update
+
+
+## @brief Overwrite a section with text computed by the code.
+#
+# Used for the statistics written at the end of the stream: figures come
+# from counters, not from the model, so there is nothing to generate.
+#
+# @param section Key of the section.
+# @param content New content of the section.
+# @param path Path of the report's JSON file.
+def set_section(section, content, path="stream_report.json"):
+    report = init_report(path)
+    report[section] = content
+    save_report(report, path)

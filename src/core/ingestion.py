@@ -6,6 +6,28 @@ import os
 from pypdf import PdfReader
 from docx import Document
 
+## @brief Task prefixes expected by nomic-embed-text: documents and queries
+# are embedded differently, which noticeably improves retrieval.
+DOCUMENT_PREFIX = "search_document: "
+## @brief Prefix of the search queries, see DOCUMENT_PREFIX.
+QUERY_PREFIX = "search_query: "
+## @brief Add the nomic task prefix when the embedding model expects one.
+#
+# Other models (bge-m3, paraphrase-multilingual) were not trained with
+# these prefixes: for them the text is embedded as-is.
+#
+# @param client Ollama client, whose embedding_model is checked.
+# @param prefix DOCUMENT_PREFIX or QUERY_PREFIX.
+# @param text Text to embed.
+# @return The text to send to the embedding model.
+def with_prefix(client, prefix, text):
+    if "nomic" in getattr(client, "embedding_model", ""):
+        return prefix + text
+    return text
+
+
+## @brief Extensions accepted by the ingestion pipeline.
+SUPPORTED_EXTENSIONS = (".txt", ".md", ".pdf", ".docx")
 
 ## @brief Load the contents of a plain text file (.txt).
 #
@@ -39,7 +61,7 @@ def load_docx(path):
     return "\n".join(p.text for p in doc.paragraphs)
 
 
-## @brief Load a document based on its extension (.txt, .pdf, .docx).
+## @brief Load a document based on its extension (.txt, .md, .pdf, .docx).
 #
 # @param path Path of the file.
 # @return Full text of the document.
@@ -47,7 +69,7 @@ def load_docx(path):
 def load_document(path):
     ext = os.path.splitext(path)[1].lower()
 
-    if ext == ".txt":
+    if ext in (".txt", ".md"):
         return load_txt(path)
     elif ext == ".pdf":
         return load_pdf(path)
@@ -68,12 +90,61 @@ def chunk_text(text, chunk_size=500, overlap=50):
     start = 0
 
     while start < len(text):
-        end = start + chunk_size
-        chunk = text[start:end]
-        chunks.append(chunk)
-        start += chunk_size - overlap
+        end = min(start + chunk_size, len(text))
+        # Cut on a space rather than in the middle of a word
+        if end < len(text):
+            space = text.rfind(" ", start + chunk_size // 2, end)
+            if space != -1:
+                end = space
+        chunk = text[start:end].strip()
+        if chunk:
+            chunks.append(chunk)
+        if end >= len(text):
+            break
+        # The overlap starts on a word too: move to the next space
+        next_start = max(end - overlap, start + 1)
+        space = text.find(" ", next_start, end)
+        start = space + 1 if space != -1 and text[next_start - 1] != " " else next_start
 
     return chunks
+
+## @brief Split a Markdown document along its headings.
+#
+# A fixed-size chunk often straddles two sections ("setup PC" and "rules"):
+# its embedding then matches neither question well. Here each chunk is one
+# section, prefixed with its heading path ("FAQ > Setup PC") so that even a
+# short section carries its topic. A section longer than chunk_size is
+# split again with chunk_text().
+#
+# @param text Markdown text.
+# @param chunk_size Maximum size of a chunk, in characters.
+# @param overlap Overlap used when a section has to be split.
+# @return List of chunks.
+def chunk_markdown(text, chunk_size=500, overlap=50):
+    chunks = []
+    titles = []
+    body = []
+
+    def flush():
+        content = "\n".join(body).strip()
+        if not content:
+            return
+        heading = " > ".join(titles)
+        for part in chunk_text(content, chunk_size, overlap):
+            chunks.append(f"{heading}\n{part}" if heading else part)
+
+    for line in text.splitlines():
+        stripped = line.lstrip()
+        if stripped.startswith("#"):
+            flush()
+            body = []
+            level = len(stripped) - len(stripped.lstrip("#"))
+            titles = titles[:level - 1] + [stripped.lstrip("#").strip()]
+        else:
+            body.append(line)
+    flush()
+    return chunks
+
 
 ## @brief Generate the embedding of each chunk via Ollama.
 #
@@ -86,7 +157,7 @@ def embed_chunks(chunks, client):
     embedded = []
 
     for chunk in chunks:
-        vector = client.embed(chunk)
+        vector = client.embed(with_prefix(client, DOCUMENT_PREFIX, chunk))
         if vector is not None:
             embedded.append({
                 "text": chunk,
@@ -105,7 +176,10 @@ def embed_chunks(chunks, client):
 # @return List of embedded chunks.
 def ingest_file(path, client, chunk_size=500, overlap=50):
     text = load_document(path)
-    chunks = chunk_text(text, chunk_size=chunk_size, overlap=overlap)
+    if path.lower().endswith(".md"):
+        chunks = chunk_markdown(text, chunk_size=chunk_size, overlap=overlap)
+    else:
+        chunks = chunk_text(text, chunk_size=chunk_size, overlap=overlap)
     return embed_chunks(chunks, client)
 
 
@@ -120,12 +194,11 @@ def ingest_file(path, client, chunk_size=500, overlap=50):
 # @param overlap Overlap between consecutive chunks.
 # @return Dict {filename: embedded_chunks}.
 def ingest_folder(folder_path, client, chunk_size=500, overlap=50):
-    supported_ext = (".txt", ".pdf", ".docx")
     results = {}
 
-    for filename in os.listdir(folder_path):
+    for filename in sorted(os.listdir(folder_path)):
         ext = os.path.splitext(filename)[1].lower()
-        if ext not in supported_ext:
+        if ext not in SUPPORTED_EXTENSIONS:
             continue
 
         full_path = os.path.join(folder_path, filename)

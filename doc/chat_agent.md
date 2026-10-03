@@ -63,6 +63,8 @@ Les réglages de cet agent sont dans `config/chat_agent.yaml`, séparés du
 | `burst_cooldown` | silence après un pic détecté (s) |
 | `burst_description` | texte du moment fort noté pour un pic |
 | `history_token_budget` | taille max de l'historique envoyé au modèle |
+| `event_command` | nom de la commande d'événement (`event`), réservée aux modos |
+| `event_usage_message` | réponse quand `!event` est tapé sans description |
 
 Le modèle, l'URL d'Ollama et la température restent dans `config.yaml`, avec
 les réglages partagés de l'agent Internet et d'OBS :
@@ -85,10 +87,58 @@ Les instructions données au modèle sont dans `prompts/` :
 |---|---|
 | `viewer_context.txt` | gabarit du contexte injecté (profil + résumé) |
 | `summarize.txt` | consignes de résumé de l'historique |
+| `persona.txt` | ton et longueur des réponses dans le chat (300 caractères max) |
 
 Elles sont **en anglais** : les modèles suivent nettement mieux une consigne
 en anglais, et répondent quand même dans la langue du viewer. Les textes lus
 par les viewers, eux, sont dans la config et suivent la langue du stream.
+
+---
+
+## Tester sans Twitch
+
+```bash
+python3 -m src.agents.chat_agent --local
+```
+
+Le chat est simulé dans le terminal : `pseudo: message` par ligne, une ligne
+sans pseudo vient du streamer (droits de modérateur). Tout le reste (mémoire,
+routage, garde-fous, compte-rendu) fonctionne comme en direct. Utile aussi
+comme plan B pendant une démo si le réseau tombe.
+
+---
+
+## Ce qui se passe quand on mentionne Sensai
+
+```
+message ──> garde-fous d'entrée ──refusé──> réponse courte, le modèle n'est pas appelé
+                  │ (données perso masquées)
+                  v
+              routeur (JSON contraint) ──> conversation (mémoire du viewer)
+                                       ├─> documents (RAG sur knowledge/)
+                                       │      └─ rien de pertinent ──> conversation
+                                       └─> web (recherche + source)
+                  v
+          garde-fous de sortie ──> chat Twitch + mémoire du viewer
+```
+
+Le terminal affiche chaque étape : `[guardrail]`, `[router] -> docs`... Les
+règles des garde-fous sont dans `config/guardrails.yaml`, la base de
+connaissances dans `knowledge/` (à indexer avec `/ingest` dans la CLI).
+
+### Noter un événement
+
+Réservé au **streamer et aux modérateurs** :
+
+```
+!event on vient de battre Malenia au 47e essai
+```
+
+Le modèle classe l'événement (changement de jeu, moment fort, chiffre, autre)
+et le code met à jour **une seule** section du compte-rendu. Contrairement à
+`!moment`, la phrase est reformulée et rangée au bon endroit. À l'arrêt de
+l'agent, la section « Statistiques » est remplie avec les vrais compteurs
+de la session.
 
 ---
 

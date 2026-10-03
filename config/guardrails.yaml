@@ -1,0 +1,76 @@
+# Garde-fous (EV2) appliqués aux messages des viewers et aux réponses de Sensai.
+# Tout se règle ici, sans toucher au code. Les motifs (patterns) sont des
+# expressions régulières Python, testées sur le texte normalisé : minuscules,
+# sans accents, sans caractères invisibles, homoglyphes remplacés.
+# Les mots-clés (keywords) sont cherchés dans le texte « compacté » (lettres
+# et chiffres seulement, leetspeak décodé) : « j.a.i.l.b.r.e.a.k » ou
+# « j41lbr34k » sont donc reconnus.
+
+enabled: true
+
+# Longueur max d'un message entrant, en caractères (Twitch : 500).
+max_input_chars: 500
+
+# Réponse quand un message est trop long.
+too_long_message: "message trop long, fais plus court."
+
+# Tentatives de prise de contrôle du modèle (jailbreak, prompt injection).
+injection:
+  message: "je ne peux pas changer mes consignes."
+  patterns:
+    - '\b(ignore|ignorez|oublie|oubliez|forget|disregard|bypass|contourne)\w*\b.{0,40}\b(instruction|consigne|regle|rule|prompt|directive|guideline)s?\b'
+    - '\b(system|systeme)\s*prompt\b'
+    - '\b(repete|repeat|affiche|print|reveal|revele|montre|donne|show|dis)\w*\b.{0,40}\b(tes|ton|vos|your)\s+(instructions?|consignes?|prompt|regles|directives?)\b'
+    - '\b(tu es|t es|you are)\s+(maintenant|desormais|now|from now on)\s+(un|une|le|la|a|an|mon|my)\b'
+    - '\b(act as|agis comme|pretend (to be|you are)|fais comme si tu etais)\b'
+    - '\b(sans|without|no)\s+(aucune?\s+)?(filtre|filter|censure|censorship|restriction)s?\b'
+    - '<\|?\s*(system|im_start|im_end|endoftext)\s*\|?>'
+    - '\[/?\s*(inst|system|sys)\s*\]'
+    - '^\s*(system|systeme|assistant)\s*:'
+  keywords:
+    - jailbreak
+    - danmode
+    - doanythingnow
+    - developermode
+    - modedeveloppeur
+    - godmode
+
+# Sujets hors périmètre pour un bot de chat public.
+blocked_topics:
+  - name: doxxing
+    message: "je ne partage aucune info personnelle sur qui que ce soit."
+    patterns:
+      - '\b(adresse|domicile|telephone|tel|numero|vrai nom|nom de famille|ip)\b.{0,30}@[a-z0-9_]{3,}'
+      - '\b(vrai nom|nom de famille|real name|home address|adresse perso|adresse personnelle)\b'
+      - '\bou (il|elle|tu) (habite|habites|vit|vis)\b'
+      - '\bwhere (does|do) .{0,20}\blive\b'
+  - name: harcelement
+    message: "pas de ça ici, on reste respectueux."
+    patterns:
+      - '\b(insulte|clash|humilie|harcele|harass|roast)\w*\b.{0,20}@[a-z0-9_]+'
+  - name: illegal
+    message: "je ne peux pas aider avec ça."
+    patterns:
+      - '\b(fabriquer|faire|make|build|how to make)\b.{0,30}\b(bombe|bomb|explosif|explosive|meth|drogue)\b'
+      - '\b(pirater|hacker|hack)\b.{0,30}\b(compte|account|mot de passe|password)\b'
+
+# Données personnelles masquées en entrée (jamais envoyées au modèle ni
+# stockées en mémoire) et en sortie (jamais postées dans le chat).
+pii:
+  email: true
+  phone: true
+  ip: true
+  card: true
+  iban: true
+  replacement: "[{kind} masqué]"
+
+# Mots masqués dans les réponses de Sensai (remplacés par des étoiles).
+banned_words:
+  - connard
+  - connasse
+  - encule
+  - salope
+  - pute
+  - batard
+  - fdp
+  - ntm

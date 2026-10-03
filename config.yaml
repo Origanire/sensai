@@ -8,6 +8,23 @@ max_tokens: 1024
 # 0 = très déterministe / répétitif, 1 = très créatif / aléatoire
 temperature: 0.7
 
+# Modèle d'embeddings (RAG). bge-m3 est multilingue : sur la FAQ de test, il
+# retrouve la bonne section 7 fois sur 7, contre 3 sur 7 pour
+# nomic-embed-text (voir tests/rag_eval.py). ollama pull bge-m3
+embedding_model: bge-m3
+
+# RAG : base de connaissances du stream (FAQ, planning, setup...).
+# /ingest l'indexe, /ask l'interroge, et l'agent chat y route les questions
+# des viewers qui portent sur la chaîne.
+# min_score : similarité minimale d'un extrait pour être donné au modèle ;
+# en dessous, Sensai répond qu'il ne sait pas au lieu d'inventer.
+rag:
+  folder: knowledge/
+  chunk_size: 500
+  overlap: 50
+  top_k: 3
+  min_score: 0.43
+
 # Internet agent : rapports de veille automatiques (/reports start|stop|status)
 # Chaque sujet est recherché sur le web puis résumé, toutes les
 # interval_minutes minutes. Un fichier report_<sujet>_<date>.md par sujet.
@@ -35,3 +52,27 @@ obs:
   port: 4455
   password: ""
   source_name: SensaiOverlay
+
+# Outils MCP (T1) utilisés par la CLI : le modèle décide seul d'appeler un
+# outil. Chaque serveur est un sous-processus qui parle JSON-RPC sur stdio.
+# - sensai : notre serveur (mémoire viewers, FAQ, compte-rendu du stream)
+# - filesystem : serveur MCP officiel, préexistant (Node.js requis), limité
+#   aux dossiers knowledge/ et exports/
+# allowed_tools filtre les outils exposés au modèle (moins d'outils = un
+# petit modèle se trompe moins). Les outils qui ne se déclarent pas en
+# lecture seule (readOnlyHint) demandent une confirmation avant exécution.
+mcp:
+  enabled: true
+  max_steps: 4
+  servers:
+    sensai:
+      command: python
+      args: ["-m", "src.mcp.server"]
+    filesystem:
+      command: npx
+      args: ["-y", "@modelcontextprotocol/server-filesystem", "knowledge", "exports"]
+      allowed_tools: [list_allowed_directories, list_directory, read_text_file, write_file]
+
+# Serveur de partage (/share) : lien sans authentification vers une page HTML.
+share:
+  port: 8765
