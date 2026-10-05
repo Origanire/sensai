@@ -8,7 +8,7 @@ import shutil
 from datetime import datetime
 
 from src.core.ingestion import chunk_text, embed_chunks
-from src.core.storage import save_chunks
+from src.core.storage import STREAMS, save_chunks
 from src.core.search import search
 from src.tools.report import render_report
 
@@ -47,7 +47,10 @@ def ingest_past_reports(client, conn, archive_dir="reports"):
     results = {}
 
     if os.path.isdir(archive_dir):
-        filenames = sorted(f for f in os.listdir(archive_dir) if f.endswith(".json"))
+        filenames = sorted(
+            f for f in os.listdir(archive_dir)
+            if f.startswith("stream_report_") and f.endswith(".json")
+        )
     else:
         filenames = []
 
@@ -69,7 +72,7 @@ def ingest_past_reports(client, conn, archive_dir="reports"):
         text = render_report(report)
         chunks = chunk_text(text, chunk_size=500, overlap=50)
         embedded = embed_chunks(chunks, client)
-        save_chunks(conn, source=filename, embedded_chunks=embedded)
+        save_chunks(conn, source=filename, embedded_chunks=embedded, collection=STREAMS)
 
         results[filename] = len(embedded)
         print(f"[Ingestion stratégie] {filename} -> {len(embedded)} chunks")
@@ -87,11 +90,11 @@ def ingest_past_reports(client, conn, archive_dir="reports"):
 # @param top_k Number of chunks injected into the context.
 # @return The model's recommendations, or a message if the history is empty.
 def generate_strategy_recommendations(client, conn, top_k=5):
-    results = search(STRATEGY_QUERY, client, conn, top_k=top_k)
+    results = search(STRATEGY_QUERY, client, conn, top_k=top_k, collection=STREAMS)
 
     if not results:
-        return ("Aucun historique de stream disponible. Archive d'abord au moins un "
-                "stream (archive_current_report) puis ingère-le (ingest_past_reports).")
+        return ("Aucun historique de stream disponible. Termine d'abord au moins un "
+                "stream avec /stream end.")
 
     # Each excerpt is preceded by its source file to tell the streams apart
     context = "\n\n".join(
@@ -117,3 +120,24 @@ Règles :
 
     messages = [{"role": "user", "content": prompt}]
     return client.chat(messages)
+
+
+## @brief Close the current stream: archive its report and index it.
+#
+# The archived report joins the "streams" collection, where the strategy
+# advice looks for it; the current report is then reset for the next
+# stream. Nothing happens if no report was started.
+#
+# @param client Ollama client used for the embeddings.
+# @param conn SQLite connection where to store the chunks.
+# @param current_path Path of the report of the ongoing stream.
+# @param archive_dir Directory where past reports are archived.
+# @return Path of the archived report, or None if there was none.
+def end_stream(client, conn, current_path="stream_report.json", archive_dir="reports"):
+    archive_path = archive_current_report(current_path, archive_dir)
+    if archive_path is None:
+        return None
+
+    ingest_past_reports(client, conn, archive_dir)
+    os.remove(current_path)
+    return archive_path

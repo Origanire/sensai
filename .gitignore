@@ -29,6 +29,11 @@ sensai.db
 documents/
 *.cfg
 *.db
+stream_report.json
+reports/
+logs/
+exports/*
+!exports/.gitkeep
 
 # Documentation Doxygen générée (seul doc/Doxyfile est versionné)
 doc/html/

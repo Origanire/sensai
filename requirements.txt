@@ -4,8 +4,9 @@ requests
 pyyaml
 pypdf
 python-docx
-fpdf2
-markdown
-duckduckgo-search
 ddgs
-pytest
+# Export PDF (/export pdf)
+fpdf2
+# Agent Internet <-> Chat / OBS
+obsws-python
+python-dotenv

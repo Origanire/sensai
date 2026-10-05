@@ -1,13 +1,40 @@
 ## @file chat_agent.py
 # @brief Twitch chat agent: replies to viewers who mention Sensai, relying
-# on their history and profile.
+# on their history and profile, and forwards !search to the Internet agent.
+#
+# Each mention goes through: input guardrails -> router -> one of three
+# agents (conversation with memory, channel documents, Internet) -> output
+# guardrails -> chat. With --local, the chat is simulated in the terminal.
 
+import argparse
+import os
+import re
+import textwrap
 import time
+
+from dotenv import load_dotenv
 
 from src.core.ollama_client import OllamaClient, load_config
 from src.core.prompts import load_prompt
-from src.tools.twitch_chat import connect, messages
-from src.tools.report import add_moment
+from src.tools.twitch_chat import (
+    MAX_MESSAGE_LENGTH,
+    connect,
+    messages,
+    send_message,
+)
+from src.tools.report import add_moment, set_section, update_report_from_event
+from src.tools.web_search import (
+    SEARCH_UNAVAILABLE,
+    ask_internet,
+    get_quick_fact,
+    load_internet_settings,
+)
+from src.tools.obs import load_obs_settings, obs_reachable, update_text_source
+from src.tools.burst import BurstDetector
+from src.agents.router import route
+from src.core.guardrails import load_guardrails
+from src.core.search import NO_DOCUMENT, ask_documents, load_rag_settings
+from src.core.storage import init_db
 from src.core.memory import (
     init_memory,
     load_facts,
@@ -29,6 +56,85 @@ AGENT_CONFIG = "config/chat_agent.yaml"
 KEEP_RECENT_MESSAGES = 4
 ## @brief Value shown in the prompt when a section is empty.
 NOTHING = "(none)"
+## @brief Web addresses in a text, without the punctuation that may follow.
+URL_PATTERN = re.compile(r"https?://[^\s)\]>]+")
+## @brief Prompt shown in --local mode.
+LOCAL_PROMPT = "chat> "
+
+
+## @brief Output of Sensai's replies.
+#
+# Every reply is printed in the terminal. When the agent is logged in with
+# a bot account, it is also sent to the Twitch chat; anonymous, the agent
+# stays read-only, as before.
+class ChatOutput:
+    ## @brief Build the output.
+    #
+    # @param sock Socket opened by connect().
+    # @param channel Name of the channel, without the "#".
+    # @param writable True if the socket is logged in with a bot account.
+    def __init__(self, sock, channel, writable):
+        ## @brief Socket of the chat connection.
+        self.sock = sock
+        ## @brief Name of the channel.
+        self.channel = channel
+        ## @brief True if messages can be sent to the chat.
+        self.writable = writable
+
+    ## @brief Send a reply to the chat only, without printing it.
+    #
+    # A sending error is printed and never interrupts the agent.
+    #
+    # @param text Reply to send.
+    def post(self, text):
+        if not self.writable or self.sock is None:
+            return
+        try:
+            send_message(self.sock, self.channel, text)
+        except OSError as error:
+            print(f"[chat] envoi impossible : {error}")
+
+    ## @brief Print a reply in the terminal and send it to the chat.
+    #
+    # @param text Reply to display.
+    def say(self, text):
+        print(f"Sensai : {text}")
+        self.post(text)
+
+
+## @brief Simulated chat read from the terminal (--local mode).
+#
+# Each line is "pseudo: message"; a line without "pseudo:" is sent as the
+# streamer. The streamer (the channel's name) has the moderator rights.
+# Produces the same dictionaries as twitch_chat.messages(), so the whole
+# agent can be tested and demonstrated without Twitch.
+#
+# @param channel Name of the channel, which is also the streamer's login.
+# @return Iterator over the simulated messages.
+def local_messages(channel):
+    print("Mode local : écris « pseudo: message » (sans pseudo = le streamer). "
+          "Ctrl+D pour quitter.")
+    while True:
+        try:
+            line = input(LOCAL_PROMPT).strip()
+        except EOFError:
+            return
+        if not line:
+            continue
+
+        author, separator, text = line.partition(":")
+        if not separator or " " in author.strip() or not author.strip():
+            author, text = channel, line
+        author, text = author.strip().lstrip("@"), text.strip()
+        login = author.lower()
+        yield {
+            "author": login,
+            "text": text,
+            "user_id": f"local-{login}",
+            "display_name": author,
+            "is_moderator": login == channel.lower(),
+            "sent_at": str(int(time.time() * 1000)),
+        }
 
 
 ## @brief In-memory state of a viewer during the session.
@@ -189,20 +295,22 @@ def remember_about(db_connection, viewers, arguments):
 
 ## @brief Compose the prompt sent to the model for a viewer.
 #
-# The profile and summary are recomputed at every call into a fresh
-# "system" message: they are never added to the history, which would
+# The persona, profile and summary are recomputed at every call into a
+# fresh "system" message: they are never added to the history, which would
 # otherwise be polluted and persisted with them.
 #
 # @param state Viewer state.
 # @param template Template loaded from prompts/viewer_context.txt.
+# @param persona Instructions loaded from prompts/persona.txt.
 # @return A message list ready for Ollama.
-def build_prompt(state, template):
-    if not state.facts and not state.summary:
+def build_prompt(state, template, persona=""):
+    system = persona
+    if state.facts or state.summary:
+        facts = "\n".join(f"- {fact}" for fact in state.facts) or NOTHING
+        system += "\n\n" + template.format(facts=facts, summary=state.summary or NOTHING)
+    if not system.strip():
         return state.history
-
-    facts = "\n".join(f"- {fact}" for fact in state.facts) or NOTHING
-    system = template.format(facts=facts, summary=state.summary or NOTHING)
-    return [{"role": "system", "content": system}] + state.history
+    return [{"role": "system", "content": system.strip()}] + state.history
 
 
 ## @brief Condense old exchanges into a summary.
@@ -256,43 +364,214 @@ def compress(client, rules, db_connection, viewer_id, state):
     return len(old_messages)
 
 
-## @brief Make Sensai reply to a viewer and record the exchange.
+## @brief Fit a web answer into a chat message without losing its source.
 #
-# If the model fails, the question is removed from the history so no
-# unanswered turn is left in it.
+# Cutting the end of a long answer would drop the URLs, usually written
+# last. When the answer is too long, its first URL is put back after the
+# truncated text.
+#
+# @param answer Answer from ask_internet().
+# @param limit Maximum length, in characters.
+# @return Text of at most limit characters.
+def format_search_reply(answer, limit):
+    text = " ".join(answer.replace("**", "").split())
+    if len(text) <= limit:
+        return text
+
+    urls = URL_PATTERN.findall(text)
+    if not urls:
+        return textwrap.shorten(text, limit, placeholder="...")
+
+    source = urls[0].rstrip(".,;:")
+    body = textwrap.shorten(text, limit - len(source) - 1, placeholder="...")
+    return f"{body} {source}"
+
+
+## @brief Answer a !search: Chat -> Internet agent -> chat and OBS overlay.
+#
+# The overlay is updated on each !search rather than on a separate timer:
+# a viewer types a question and the answer shows up in the chat then on
+# screen, which can be demonstrated live. The short fact for the overlay
+# is only computed when OBS answers, since it costs a second web search
+# and a model call.
+#
+# @param question Question typed after !search.
+# @param author Display name of the viewer.
+# @param client Ollama client.
+# @param chat ChatOutput.
+# @param internet_settings Settings from load_internet_settings().
+# @param obs_settings Settings from load_obs_settings().
+# @param guardrails Guardrails applied to the question and the answers.
+def search_and_share(question, author, client, chat, internet_settings, obs_settings,
+                     guardrails):
+    verdict = guardrails.check_input(question)
+    if not verdict.allowed:
+        print(f"[guardrail] !search refusé ({verdict.category})")
+        chat.say(f"@{author} {verdict.message}")
+        return
+    question = verdict.text
+
+    print(f"[search] {author} : {question}")
+    result = guardrails.check_output(
+        ask_internet(question, client, internet_settings["max_results"])
+    ).text
+
+    prefix = f"@{author} "
+    chat.say(prefix + format_search_reply(result, MAX_MESSAGE_LENGTH - len(prefix)))
+
+    if result == SEARCH_UNAVAILABLE or not obs_settings["enabled"]:
+        return
+    if not obs_reachable(obs_settings["host"], obs_settings["port"]):
+        print(f"[OBS] injoignable sur {obs_settings['host']}:{obs_settings['port']}, "
+              f"overlay non mis à jour.")
+        return
+
+    fact = guardrails.check_output(get_quick_fact(question, client)).text
+    if fact == SEARCH_UNAVAILABLE:
+        return
+    if update_text_source(
+        obs_settings["source_name"],
+        fact,
+        obs_settings["host"],
+        obs_settings["port"],
+        obs_settings["password"],
+    ):
+        print(f"[OBS] {obs_settings['source_name']} <- {fact}")
+
+
+## @brief Conversation agent: reply with the viewer's memory, streamed.
+#
+# The question is only kept in the history for the call: the exchange is
+# recorded afterwards by record(), once the reply has gone through the
+# output guardrails.
 #
 # @param client Ollama client.
+# @param state Viewer state.
+# @param question Viewer's message, without the mention.
+# @param template Context template.
+# @param persona Persona instructions.
+# @return The model's reply, or None on failure.
+def answer(client, state, question, template, persona=""):
+    state.history.append({"role": "user", "content": question})
+    print(f"Sensai : @{state.display_name} ", end="", flush=True)
+    try:
+        reply = client.chat(build_prompt(state, template, persona))
+    finally:
+        state.history.pop()
+    print()
+    return reply
+
+
+## @brief Add an exchange to a viewer's history, in memory and on disk.
+#
 # @param db_connection Open SQLite connection.
 # @param viewer_id Twitch identifier of the viewer.
 # @param state Viewer state, modified in place.
-# @param question Viewer's message, without the mention.
-# @param template Context template.
-# @return The model's reply, or None on failure.
-def answer(client, db_connection, viewer_id, state, question, template):
+# @param question Viewer's message (personal data already masked).
+# @param reply Sensai's reply (already cleaned).
+def record(db_connection, viewer_id, state, question, reply):
     state.history.append({"role": "user", "content": question})
-
-    print(f"Sensai : @{state.display_name} ", end="", flush=True)
-    reply = client.chat(build_prompt(state, template))
-    print()
-
-    if reply is None:
-        state.history.pop()
-        return None
-
     state.history.append({"role": "assistant", "content": reply})
     save_message(db_connection, viewer_id, "user", question)
     save_message(db_connection, viewer_id, "assistant", reply)
-    return reply
+
+
+## @brief Orchestrate the reply to a mention (A2 + EV2).
+#
+# input guardrails -> router -> specialized agent -> output guardrails.
+# A refused message gets the rule's short answer and never reaches the
+# model. When the documents agent finds nothing relevant, the
+# conversation agent answers instead.
+#
+# @param ctx Dictionary of the agent's shared objects (client, databases,
+#            guardrails, settings, counters).
+# @param viewer_id Twitch identifier of the viewer.
+# @param state Viewer state.
+# @param question Viewer's message, without the mention.
+# @return The reply posted, or None if nothing was posted.
+def respond(ctx, viewer_id, state, question):
+    stats = ctx["stats"]
+    ctx["last_route"] = None
+    verdict = ctx["guardrails"].check_input(question)
+    if not verdict.allowed:
+        stats["blocked"] += 1
+        print(f"[guardrail] message refusé ({verdict.category})")
+        print(f"Sensai : @{state.display_name} {verdict.message}")
+        return verdict.message
+    if verdict.redacted:
+        print(f"[guardrail] données masquées en entrée : {', '.join(verdict.redacted)}")
+    question = verdict.text
+
+    choice = route(question, ctx["client"])
+    print(f"[router] -> {choice}")
+
+    reply = None
+    if choice == "docs":
+        reply = ask_documents(question, ctx["client"], ctx["chunks"], ctx["rag"])
+        if reply == NO_DOCUMENT:
+            print("[router] rien dans les documents, l'agent conversation prend le relais")
+            choice, reply = "chat", None
+        else:
+            print(f"Sensai : @{state.display_name} {reply}")
+    elif choice == "web":
+        reply = ask_internet(question, ctx["client"], ctx["internet"]["max_results"])
+        print(f"Sensai : @{state.display_name} {reply}")
+
+    if choice == "chat":
+        reply = answer(ctx["client"], state, question, ctx["template"], ctx["persona"])
+    if reply is None:
+        return None
+
+    stats["routes"][choice] += 1
+    ctx["last_route"] = choice
+    cleaned = ctx["guardrails"].check_output(reply)
+    if cleaned.redacted:
+        print(f"[guardrail] réponse nettoyée : {', '.join(cleaned.redacted)}")
+    record(ctx["db"], viewer_id, state, question, cleaned.text)
+    return cleaned.text
+
+
+## @brief Write the session's figures in the stream report's stats section.
+#
+# Figures come from counters, not from the model: nothing to invent.
+#
+# @param activity Live sessions of the viewers.
+# @param stats Counters of the agent (routes, blocked messages...).
+def write_session_stats(activity, stats):
+    if not activity:
+        return
+    messages_count = sum(session["messages"] for session in activity.values())
+    routes = stats["routes"]
+    set_section("stats", "\n".join([
+        f"- {len(activity)} chatteurs, {messages_count} messages dans le chat",
+        f"- {sum(routes.values())} réponses de Sensai "
+        f"(conversation {routes['chat']}, documents {routes['docs']}, web {routes['web']})",
+        f"- {stats['searches']} recherches !search, {stats['events']} événements notés",
+        f"- {stats['blocked']} messages bloqués par les garde-fous",
+    ]))
 
 
 ## @brief Entry point of the chat agent.
 #
-# Loops over chat messages: tracks everyone's activity, runs moderator
-# commands, and replies to those who mention Sensai. No content is
-# recorded for messages not addressed to it.
+# Loops over chat messages: tracks everyone's activity, logs chat bursts
+# as highlights, runs commands, and replies to those who mention Sensai.
+# No content is recorded for messages not addressed to it.
+#
+# The bot account is read from TWITCH_BOT_USERNAME and TWITCH_OAUTH_TOKEN
+# (environment or .env); without them, the agent reads the chat
+# anonymously and its replies only appear in the terminal. With --local,
+# no connection is made: the chat is typed in the terminal.
 def main():
+    parser = argparse.ArgumentParser(description="Agent chat Twitch de Sensai.")
+    parser.add_argument("--local", action="store_true",
+                        help="simuler le chat dans le terminal, sans Twitch")
+    args = parser.parse_args()
+
+    load_dotenv()
     config = load_config()
     agent_config = load_config(AGENT_CONFIG)
+    internet_settings = load_internet_settings(config)
+    obs_settings = load_obs_settings(config)
 
     channel = agent_config["channel"]
     trigger = agent_config["trigger"]
@@ -303,21 +582,63 @@ def main():
     moment_command = agent_config["moment_command"]
     moment_saved_message = agent_config["moment_saved_message"]
     moment_usage_message = agent_config["moment_usage_message"]
+    search_command = agent_config["search_command"]
+    search_usage_message = agent_config["search_usage_message"]
+    event_command = agent_config.get("event_command", "event")
+    event_usage_message = agent_config.get("event_usage_message", "usage : !event <description>")
+    moment_cooldown = agent_config["moment_cooldown"]
+    burst_description = agent_config["burst_description"]
     token_budget = agent_config["history_token_budget"]
 
-    context_template = load_prompt("viewer_context")
     summary_rules = load_prompt("summarize")
 
     client = OllamaClient(config)
+    problem = client.check_model()
+    if problem:
+        print(f"[Attention] {problem}")
+    guardrails = load_guardrails()
     db_connection = init_memory()
-    sock = connect(channel)
+    ctx = {
+        "client": client,
+        "db": db_connection,
+        "chunks": init_db(),
+        "guardrails": guardrails,
+        "rag": load_rag_settings(config),
+        "internet": internet_settings,
+        "template": load_prompt("viewer_context"),
+        "persona": load_prompt("persona"),
+        "stats": {"blocked": 0, "searches": 0, "events": 0,
+                  "routes": {"chat": 0, "docs": 0, "web": 0}},
+    }
+
+    if args.local:
+        sock = None
+        chat = ChatOutput(None, channel, writable=False)
+        incoming = local_messages(channel)
+        print(f"Chat simulé de #{channel}, trigger \"{trigger}\".\n")
+    else:
+        bot_username = os.environ.get("TWITCH_BOT_USERNAME")
+        bot_token = os.environ.get("TWITCH_OAUTH_TOKEN")
+        sock = connect(channel, bot_username, bot_token)
+        chat = ChatOutput(sock, channel, writable=bool(bot_username and bot_token))
+        incoming = messages(sock)
+        mode = f"as {bot_username}" if chat.writable else "anonymously (read-only)"
+        print(f"Listening on #{channel} {mode}, trigger \"{trigger}\". Ctrl+C to quit.\n")
+
     viewers = {}
     activity = {}
-
-    print(f"Listening on #{channel}, trigger \"{trigger}\". Ctrl+C to quit.\n")
+    last_search = None
+    last_moment = {}
+    burst = BurstDetector(
+        window=agent_config["burst_window"],
+        audience_window=agent_config["burst_audience_window"],
+        ratio=agent_config["burst_ratio"],
+        min_messages=agent_config["burst_min_messages"],
+        cooldown=agent_config["burst_cooldown"],
+    )
 
     try:
-        for message in messages(sock):
+        for message in incoming:
             viewer_id = message["user_id"]
             if viewer_id not in activity:
                 remember_viewer(
@@ -326,9 +647,20 @@ def main():
                     message["author"],
                     message["display_name"],
                 )
-            session = track_activity(
-                activity, viewer_id, message_time(message)
-            )
+            sent_at = message_time(message)
+            session = track_activity(activity, viewer_id, sent_at)
+
+            detected = burst.add(viewer_id, sent_at)
+            if detected is not None:
+                count, threshold, audience = detected
+                line = add_moment(
+                    burst_description.format(count=count, window=burst.window),
+                    sent_at,
+                )
+                print(
+                    f"[burst] {count} messages >= {threshold} "
+                    f"({audience} active chatters) -> {line}"
+                )
 
             command = parse_command(message["text"], command_prefix)
             if command is not None:
@@ -338,16 +670,47 @@ def main():
                     if name == remember_command and message["is_moderator"]:
                         target = remember_about(db_connection, viewers, arguments)
                         if target is None:
-                            print(f"Sensai : @{author} {viewer_not_found_message}")
+                            chat.say(f"@{author} {viewer_not_found_message}")
                         else:
-                            print(f"Sensai : @{author} {fact_saved_message}")
-                    elif name == moment_command and message["is_moderator"]:
+                            chat.say(f"@{author} {fact_saved_message}")
+                    elif name == moment_command:
+                        previous = last_moment.get(viewer_id)
                         if not arguments:
-                            print(f"Sensai : @{author} {moment_usage_message}")
+                            chat.say(f"@{author} {moment_usage_message}")
+                        elif previous is not None and sent_at - previous < moment_cooldown:
+                            print(f"[moment] {author} ignored (cooldown)")
                         else:
-                            line = add_moment(arguments, message_time(message))
+                            last_moment[viewer_id] = sent_at
+                            line = add_moment(f"{arguments} ({author})", sent_at)
                             print(f"[moment] {line}")
-                            print(f"Sensai : @{author} {moment_saved_message}")
+                            chat.say(f"@{author} {moment_saved_message}")
+                    elif name == event_command and message["is_moderator"]:
+                        # The model picks the section; the code applies the edit
+                        if not arguments:
+                            chat.say(f"@{author} {event_usage_message}")
+                        else:
+                            _, update = update_report_from_event(arguments, client)
+                            if update is None:
+                                print("[event] événement non compris, compte-rendu inchangé")
+                            else:
+                                ctx["stats"]["events"] += 1
+                                print(f"[event] {update['section']} ({update['action']}) "
+                                      f"<- {update['content']}")
+                    elif name == search_command:
+                        # Global cooldown: a search blocks the loop for several
+                        # seconds, a per-viewer limit would not protect it
+                        cooldown = internet_settings["cooldown_seconds"]
+                        if not arguments:
+                            chat.say(f"@{author} {search_usage_message}")
+                        elif last_search is not None and sent_at - last_search < cooldown:
+                            print(f"[search] {author} ignoré (cooldown)")
+                        else:
+                            last_search = sent_at
+                            ctx["stats"]["searches"] += 1
+                            search_and_share(
+                                arguments, author, client, chat,
+                                internet_settings, obs_settings, guardrails,
+                            )
                 except Exception as error:
                     print(f"[command] {name} a échoué : {error}")
                 continue
@@ -370,12 +733,15 @@ def main():
                 f"{format_duration(session['last'] - session['first'])} active"
             )
 
-            reply = answer(
-                client, db_connection, viewer_id, state, question, context_template
-            )
+            reply = respond(ctx, viewer_id, state, question)
             if reply is None:
                 continue
+            chat.post(f"@{state.display_name} {reply}")
 
+            # Only the conversation agent sends the history: the token count
+            # of a documents or web call says nothing about its size
+            if ctx.get("last_route") != "chat":
+                continue
             used = client.last_prompt_tokens
             print(f"[tokens] {used}/{token_budget}")
 
@@ -386,8 +752,10 @@ def main():
                 if compressed:
                     print(f"[compress] {compressed} messages summarized")
     finally:
+        write_session_stats(activity, ctx["stats"])
         flush_activity(db_connection, activity)
-        sock.close()
+        if sock is not None:
+            sock.close()
         db_connection.close()
 
 

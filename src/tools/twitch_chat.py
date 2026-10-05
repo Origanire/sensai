@@ -1,7 +1,9 @@
 ## @file twitch_chat.py
-# @brief Twitch chat connector: anonymous reading of messages via IRC.
+# @brief Twitch chat connector: reading (anonymous or as a bot account)
+# and sending of messages via IRC.
 
 import socket
+import textwrap
 
 ## @brief Twitch chat IRC server.
 HOST = "irc.chat.twitch.tv"
@@ -13,6 +15,10 @@ NICK = "justinfan82730"
 ## @brief Requested IRC capabilities. "tags" adds the metadata of each
 # message (user-id, display name, badges, timestamp).
 CAPABILITIES = "twitch.tv/tags twitch.tv/commands"
+## @brief Maximum length of a chat message accepted by Twitch, in characters.
+MAX_MESSAGE_LENGTH = 500
+## @brief NOTICEs sent by Twitch before closing the connection on a bad login.
+LOGIN_FAILURES = ("Login authentication failed", "Improperly formatted auth")
 
 ## @brief Escape sequences used by Twitch in tag values: space and
 # semicolon are separators there.
@@ -27,15 +33,42 @@ TAG_ESCAPES = (
 
 ## @brief Open the connection to a channel's chat and request the tags.
 #
+# Without credentials, the connection is anonymous and read-only. With a
+# bot account and its OAuth token (scopes chat:read and chat:edit), the
+# same socket can also send messages via send_message().
+#
 # @param channel Name of the channel, without the "#".
+# @param username Login of the bot account, or None for anonymous.
+# @param token OAuth token of the bot account, with or without "oauth:".
 # @return Connected socket, ready to be read by messages().
-def connect(channel):
+def connect(channel, username=None, token=None):
+    if username and token:
+        password = token if token.startswith("oauth:") else f"oauth:{token}"
+        login = f"PASS {password}\r\nNICK {username.lower()}\r\n"
+    else:
+        login = f"PASS SCHMOOPIIE\r\nNICK {NICK}\r\n"
+
     sock = socket.create_connection((HOST, PORT))
     sock.sendall(
-        f"CAP REQ :{CAPABILITIES}\r\n"
-        f"PASS SCHMOOPIIE\r\nNICK {NICK}\r\nJOIN #{channel}\r\n".encode()
+        f"CAP REQ :{CAPABILITIES}\r\n{login}JOIN #{channel}\r\n".encode()
     )
     return sock
+
+
+## @brief Send a message to a channel's chat.
+#
+# IRC forbids line breaks inside a message and Twitch drops messages over
+# MAX_MESSAGE_LENGTH without any error: whitespace is collapsed and the
+# text is cut on a word boundary, ending with "...".
+#
+# @param sock Socket opened by connect() with a bot account.
+# @param channel Name of the channel, without the "#".
+# @param text Message to send.
+# @return The text actually sent.
+def send_message(sock, channel, text):
+    text = textwrap.shorten(text, MAX_MESSAGE_LENGTH, placeholder="...")
+    sock.sendall(f"PRIVMSG #{channel} :{text}\r\n".encode())
+    return text
 
 
 ## @brief Restore the escaped characters of a tag value.
@@ -122,16 +155,27 @@ def parse_privmsg(line):
 #
 # @param sock Socket opened by connect().
 # @return Iterator over the dictionaries produced by parse_privmsg().
+# @exception ConnectionError If Twitch rejects the login or closes the
+#            connection.
 def messages(sock):
     buffer = ""
     while True:
-        buffer += sock.recv(4096).decode("utf-8", errors="replace")
+        data = sock.recv(4096)
+        if not data:
+            raise ConnectionError("Twitch a fermé la connexion au chat.")
+        buffer += data.decode("utf-8", errors="replace")
         while "\r\n" in buffer:
             line, buffer = buffer.split("\r\n", 1)
 
             if line.startswith("PING"):
                 sock.sendall(b"PONG :tmi.twitch.tv\r\n")
                 continue
+
+            if " NOTICE " in line and any(f in line for f in LOGIN_FAILURES):
+                raise ConnectionError(
+                    "Twitch a refusé la connexion du bot : vérifie "
+                    "TWITCH_BOT_USERNAME et TWITCH_OAUTH_TOKEN dans .env."
+                )
 
             message = parse_privmsg(line)
             if message is not None:
