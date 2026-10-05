@@ -23,7 +23,7 @@ GUARDRAILS_CONFIG = "config/guardrails.yaml"
 ZERO_WIDTH = re.compile("[​-‏⁠⁦-⁩﻿­]")
 ## @brief Control characters and bidirectional overrides: invisible in the
 # chat, they can hide text or reverse its display.
-CONTROL = re.compile("[\x00-\x08\x0b-\x1f\x7f\u202a-\u202e]")
+CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f\u202a\u202b\u202c\u202d\u202e]")
 ## @brief Cyrillic and Greek letters that look like Latin ones.
 HOMOGLYPHS = str.maketrans({
     "а": "a", "е": "e", "о": "o", "р": "p", "с": "c", "х": "x", "у": "y",
