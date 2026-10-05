@@ -53,7 +53,14 @@ def write_export_file(content: str | bytes | bytearray, extension: str) -> Path:
     return export_filename
 
 
-def build_markdown_string(messages: list[dict[str, str]]):
+## @brief Build the Markdown text shared by the Markdown and PDF exports.
+#
+# The text starts with a title containing the export date, followed by
+# one section per message: the role as a heading, the content below it.
+#
+# @param messages Conversation history (list of "role"/"content" dicts).
+# @return Markdown text of the conversation.
+def build_markdown_string(messages: list[dict[str, str]]) -> str:
     now: datetime = datetime.now()
     export_datetime: str = now.strftime("%d/%m/%Y %H:%M")
     export_string: str = f"# Sensai CLI Chat conversation export {export_datetime}\n"
@@ -78,11 +85,11 @@ def export_pdf(messages: list[dict[str, str]]) -> str:
     export_string = build_markdown_string(messages)
     export_html = markdown.markdown(export_string)
 
-    export_file = FPDF()
-    export_file.add_page()
-    export_file.write_html(export_html)
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.write_html(export_html)
 
-    export_filename = write_export_file(export_file.output(), ".pdf")
+    export_filename = write_export_file(pdf.output(), ".pdf")
     return f"PDF chat export successful at '{export_filename}'."
 
 ## @brief Export the conversation to a Markdown file.
