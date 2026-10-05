@@ -30,14 +30,13 @@ def main():
             print("À bientôt !")
             break
 
-        # Slash Commands
+        # Slash Commands: handled locally, never added to the conversation
+        # history, so commands and their output stay out of the model's
+        # context and of any export.
         if user_input.startswith("/"):
             system_message = commands(user_input, messages)
             print(system_message)
-
-            messages.append({"role": "user", "content": user_input})
-            messages.append({"role": "system", "content": system_message})
-            continue # Continue is here to avoid sending commands to the model
+            continue
 
         messages.append({"role": "user", "content": user_input})
 

@@ -59,8 +59,6 @@ def build_markdown_string(messages: list[dict[str, str]]):
     export_string: str = f"# Sensai CLI Chat conversation export {export_datetime}\n"
 
     for message in messages:
-        if message["role"] == "system":
-            continue
         role = message["role"]
         content = message["content"]
         export_string += f"## {role}\n{content}\n\n"
@@ -101,18 +99,14 @@ def export_md(messages: list[dict[str, str]]) -> str:
 
 ## @brief Export the conversation to a JSON file.
 #
-# The conversation history is serialized as a JSON array of
-# "role"/"content" dicts, excluding system messages. The file is created
-# in the exports/ folder at the repository root, under a timestamped
-# name to keep successive exports distinct.
+# The conversation history is serialized as-is: a JSON array of
+# "role"/"content" dicts. The file is created in the exports/ folder at
+# the repository root, under a timestamped name to keep successive
+# exports distinct.
 #
 # @param messages Conversation history (list of "role"/"content" dicts).
 # @return Confirmation message showing the path of the created file.
 def export_json(messages: list[dict[str, str]]) -> str:
-    export_content = dumps(
-        [message for message in messages if message["role"] != "system"],
-        indent=2,
-        ensure_ascii=False,
-    )
+    export_content = dumps(messages, indent=2, ensure_ascii=False)
     export_filename = write_export_file(export_content, ".json")
     return f"JSON chat export successful at '{export_filename}'."
