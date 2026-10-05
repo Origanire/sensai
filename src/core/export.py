@@ -4,6 +4,8 @@
 from datetime import datetime
 from pathlib import Path
 from json import dumps
+import markdown
+from fpdf import FPDF
 
 ## @brief Export folder, anchored to the repository root regardless of the
 # directory the CLI is launched from.
@@ -22,11 +24,13 @@ def export_help() -> str:
 #
 # Creates the exports/ folder if needed, then writes the content to a
 # file named after the current date and time, with the given extension.
+# Text content is written as UTF-8; binary content (e.g. PDF) is
+# written as-is.
 #
-# @param content Serialized conversation text.
+# @param content Serialized conversation, as text or bytes.
 # @param extension File extension, with the leading dot (e.g. ".md").
 # @return Path of the created file.
-def write_export_file(content: str, extension: str) -> Path:
+def write_export_file(content: str | bytes | bytearray, extension: str) -> Path:
     now: datetime = datetime.now()
 
     export_filename: Path = (
@@ -34,16 +38,43 @@ def write_export_file(content: str, extension: str) -> Path:
     ).with_suffix(extension)
 
     EXPORT_DIR.mkdir(exist_ok=True)
-    with open(export_filename, "w", encoding="utf-8") as file:
-        file.write(content)
+
+    if isinstance(content, (bytes, bytearray)):
+        with open(export_filename, "wb") as file:
+            file.write(content)
+    else:
+        with open(export_filename, "w", encoding="utf-8") as file:
+            file.write(content)
+    
     return export_filename
+
+
+def build_markdown_string(messages: list[dict[str, str]]):
+    now: datetime = datetime.now()
+    export_datetime: str = now.strftime("%d/%m/%Y %H:%M")
+    export_string: str = f"# Sensai CLI Chat conversation export {export_datetime}\n"
+
+    for message in messages:
+        role = message["role"]
+        content = message["content"]
+        export_string += f"## {role}\n{content}\n\n"
+
+    return export_string
 
 ## @brief Export the conversation to PDF (not implemented).
 #
 # @param messages Conversation history (list of "role"/"content" dicts).
 # @return Message stating the function is not yet implemented.
 def export_pdf(messages: list[dict[str, str]]) -> str:
-    return "'export_pdf()' not yet implemented."
+    export_string = build_markdown_string(messages)
+    export_html = markdown.markdown(export_string)
+
+    export_file = FPDF()
+    export_file.add_page()
+    export_file.write_html(export_html)
+
+    export_filename = write_export_file(export_file.output(), ".pdf")
+    return f"PDF chat export successful at '{export_filename}'."
 
 ## @brief Export the conversation to a Markdown file.
 #
@@ -53,17 +84,8 @@ def export_pdf(messages: list[dict[str, str]]) -> str:
 # @param messages Conversation history (list of "role"/"content" dicts).
 # @return Confirmation message showing the path of the created file.
 def export_md(messages: list[dict[str, str]]) -> str:
-    now: datetime = datetime.now()
-    export_datetime: str = now.strftime("%d/%m/%Y %H:%M")
-
-    export_string: str = f"# Sensai CLI Chat conversation export {export_datetime}\n"
-    for message in messages:
-        role = message["role"]
-        content = message["content"]
-        export_string += f"## {role}\n{content}\n\n"
-
+    export_string = build_markdown_string(messages)
     export_filename = write_export_file(export_string, ".md")
-
     return f"Markdown chat export successful at '{export_filename}'."
 
 ## @brief Export the conversation to a JSON file.

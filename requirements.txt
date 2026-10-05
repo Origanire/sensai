@@ -4,5 +4,7 @@ requests
 pyyaml
 pypdf
 python-docx
+fpdf2
+markdown
 duckduckgo-search
 ddgs
