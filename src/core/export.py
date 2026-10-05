@@ -24,6 +24,7 @@ def export_help() -> str:
 #
 # Creates the exports/ folder if needed, then writes the content to a
 # file named after the current date and time, with the given extension.
+# If the name is already taken, a counter is appended (e.g. "_1").
 # Text content is written as UTF-8; binary content (e.g. PDF) is
 # written as-is.
 #
@@ -32,12 +33,15 @@ def export_help() -> str:
 # @return Path of the created file.
 def write_export_file(content: str | bytes | bytearray, extension: str) -> Path:
     now: datetime = datetime.now()
-
-    export_filename: Path = (
-        EXPORT_DIR / now.strftime("SensaiChat_%Y-%m-%d_%H-%M")
-    ).with_suffix(extension)
+    timestamp: str = now.strftime("SensaiChat_%Y-%m-%d_%H-%M")
 
     EXPORT_DIR.mkdir(exist_ok=True)
+
+    export_filename: Path = (EXPORT_DIR / timestamp).with_suffix(extension)
+    counter: int = 1
+    while export_filename.exists():
+        export_filename = (EXPORT_DIR / f"{timestamp}_{counter}").with_suffix(extension)
+        counter += 1
 
     if isinstance(content, (bytes, bytearray)):
         with open(export_filename, "wb") as file:
@@ -45,7 +49,7 @@ def write_export_file(content: str | bytes | bytearray, extension: str) -> Path:
     else:
         with open(export_filename, "w", encoding="utf-8") as file:
             file.write(content)
-    
+
     return export_filename
 
 
@@ -55,16 +59,23 @@ def build_markdown_string(messages: list[dict[str, str]]):
     export_string: str = f"# Sensai CLI Chat conversation export {export_datetime}\n"
 
     for message in messages:
+        if message["role"] == "system":
+            continue
         role = message["role"]
         content = message["content"]
         export_string += f"## {role}\n{content}\n\n"
 
     return export_string
 
-## @brief Export the conversation to PDF (not implemented).
+## @brief Export the conversation to a PDF file.
+#
+# The same Markdown source as export_md is built, converted to HTML by
+# the markdown package, then rendered into pages by fpdf2. The file is
+# created in the exports/ folder at the repository root, under a
+# timestamped name to keep successive exports distinct.
 #
 # @param messages Conversation history (list of "role"/"content" dicts).
-# @return Message stating the function is not yet implemented.
+# @return Confirmation message showing the path of the created file.
 def export_pdf(messages: list[dict[str, str]]) -> str:
     export_string = build_markdown_string(messages)
     export_html = markdown.markdown(export_string)
@@ -90,14 +101,18 @@ def export_md(messages: list[dict[str, str]]) -> str:
 
 ## @brief Export the conversation to a JSON file.
 #
-# The conversation history is serialized as-is: a JSON array of
-# "role"/"content" dicts. The file is created in the exports/ folder at
-# the repository root, under a timestamped name to keep successive
-# exports distinct.
+# The conversation history is serialized as a JSON array of
+# "role"/"content" dicts, excluding system messages. The file is created
+# in the exports/ folder at the repository root, under a timestamped
+# name to keep successive exports distinct.
 #
 # @param messages Conversation history (list of "role"/"content" dicts).
 # @return Confirmation message showing the path of the created file.
 def export_json(messages: list[dict[str, str]]) -> str:
-    export_content = dumps(messages, indent=2, ensure_ascii=False)
+    export_content = dumps(
+        [message for message in messages if message["role"] != "system"],
+        indent=2,
+        ensure_ascii=False,
+    )
     export_filename = write_export_file(export_content, ".json")
     return f"JSON chat export successful at '{export_filename}'."
