@@ -2,10 +2,13 @@
 # Les réglages globaux (modèle, URL Ollama...) restent dans config.yaml.
 
 # Chaîne Twitch à écouter.
-channel: kevinaigre
+channel: origaniretv
+
+# Nom public du bot, utilisé dans ses consignes de conversation.
+bot_name: LumiTheBoat
 
 # Mention à laquelle Sensai répond dans le chat.
-trigger: "@sensai"
+trigger: "@lumitheboat"
 
 # Préfixe des commandes (!remember, !moment, !search).
 command_prefix: "!"
