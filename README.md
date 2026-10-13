@@ -313,16 +313,29 @@ cp .env.example .env
    ```
 2. **Créer un compte Twitch pour le bot** (ex. `sensai_bot`). Un compte séparé
    évite que le bot parle sous le nom du streamer.
-3. **Générer un token OAuth pour ce compte**, connecté en tant que bot, avec
-   les scopes `chat:read` et `chat:edit` (par exemple via
-   [twitchtokengenerator.com](https://twitchtokengenerator.com), « Bot Chat
-   Token »). Copier l'*Access Token*.
-4. **Remplir `.env`** :
+3. **Enregistrer une application Twitch de type Public** dans la
+   [console développeur](https://dev.twitch.tv/console/apps), catégorie Chat Bot,
+   puis récupérer son Client ID. Twitch demande un e-mail vérifié et la double
+   authentification. Si une URL de redirection est exigée, utiliser
+   `https://localhost:3000` : le flux par code d'appareil ne l'utilise pas.
+4. **Connecter le compte bot depuis son navigateur habituel** :
+   ```bash
+   python3 -m src.tools.twitch_auth --client-id TON_CLIENT_ID --bot sensai_bot
    ```
-   TWITCH_BOT_USERNAME=sensai_bot
-   TWITCH_OAUTH_TOKEN=le_token_copié
+   Ouvrir `https://www.twitch.tv/activate`, saisir le code affiché et autoriser
+   la lecture et l'envoi de messages (`chat:read`, `chat:edit`). Vérifier que
+   le compte connecté est bien le bot. L'assistant vérifie le compte et les
+   permissions avant d'enregistrer les jetons dans `.env`, sans les afficher.
+   Aucun secret client ni navigateur intégré n'est nécessaire.
+
+   Pour vérifier la connexion sans envoyer de message :
+   ```bash
+   python3 -m src.tools.twitch_auth --check
    ```
-   Le préfixe `oauth:` est facultatif. Ne jamais versionner ce fichier.
+   Le renouvellement automatique n'est pas encore intégré : si le jeton
+   expire, relancer `python3 -m src.tools.twitch_auth`, puis redémarrer le bot.
+   Le jeton de renouvellement est conservé pour une intégration ultérieure.
+   La connexion IRC utilise TLS (port 6697).
 5. *(Conseillé)* **Nommer le bot modérateur** de la chaîne en tapant
    `/mod sensai_bot` dans le chat : Twitch le laisse alors envoyer plus de
    messages et ignorer le mode lent.
@@ -332,8 +345,9 @@ cp .env.example .env
    ```
    La première ligne doit être `Listening on #ta_chaine as sensai_bot`. Si elle
    indique `anonymously (read-only)`, les variables de `.env` ne sont pas lues.
-7. **Tester** dans le chat : `@sensai salut`, puis `!search date de sortie de
-   Elden Ring Nightreign`.
+7. **Tester** dans le chat : utiliser la mention définie dans
+   `config/chat_agent.yaml` (`trigger`), par exemple `@LumiTheBoat salut`,
+   puis `!search date de sortie de Elden Ring Nightreign`.
 
 ### OBS : afficher les résultats en overlay
 
