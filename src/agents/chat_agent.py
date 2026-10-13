@@ -606,7 +606,7 @@ def main():
         "rag": load_rag_settings(config),
         "internet": internet_settings,
         "template": load_prompt("viewer_context"),
-        "persona": load_prompt("persona"),
+        "persona": load_prompt("persona").replace("{bot_name}", agent_config.get("bot_name", "Sensai")),
         "stats": {"blocked": 0, "searches": 0, "events": 0,
                   "routes": {"chat": 0, "docs": 0, "web": 0}},
     }
