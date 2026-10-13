@@ -117,7 +117,7 @@ def main():
     guardrails = load_guardrails()
     attacks = load_attacks()
     client = OllamaClient() if args.live else None
-    persona = load_prompt("persona") if args.live else ""
+    persona = load_prompt("persona").replace("{bot_name}", "Sensai") if args.live else ""
 
     rows = []
     unexpected = []
