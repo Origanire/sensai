@@ -3,12 +3,15 @@
 # and sending of messages via IRC.
 
 import socket
+import ssl
 import textwrap
+
+from requests import certs
 
 ## @brief Twitch chat IRC server.
 HOST = "irc.chat.twitch.tv"
-## @brief Cleartext IRC port.
-PORT = 6667
+## @brief TLS IRC port: bot credentials must not travel in cleartext.
+PORT = 6697
 ## @brief Anonymous nickname: Twitch accepts any nickname starting with
 # "justinfan" for read-only access, without an account or token.
 NICK = "justinfan82730"
@@ -48,7 +51,16 @@ def connect(channel, username=None, token=None):
     else:
         login = f"PASS SCHMOOPIIE\r\nNICK {NICK}\r\n"
 
-    sock = socket.create_connection((HOST, PORT))
+    raw_sock = socket.create_connection((HOST, PORT), timeout=20)
+    try:
+        context = ssl.create_default_context()
+        # Python installations on macOS may have no system CA bundle configured.
+        context.load_verify_locations(cafile=certs.where())
+        sock = context.wrap_socket(raw_sock, server_hostname=HOST)
+    except Exception:
+        raw_sock.close()
+        raise
+    sock.settimeout(None)
     sock.sendall(
         f"CAP REQ :{CAPABILITIES}\r\n{login}JOIN #{channel}\r\n".encode()
     )
