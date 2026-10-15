@@ -14,6 +14,67 @@ Projet réalisé dans le cadre du cursus Epitech (PGE3 — G-AIA-500-MAR-5-1).
 Pour comprendre et tester chaque fonctionnalité pas à pas :
 [`doc/compte_rendu.md`](doc/compte_rendu.md).
 
+## Dashboard local du bot
+
+Sur macOS ou Linux, après l'installation des dépendances et la connexion du compte
+Twitch dédié, ouvre Ollama puis lance depuis la racine du projet :
+
+```bash
+.venv/bin/python -m src.dashboard
+```
+
+Ouvre **http://127.0.0.1:8766** dans ton navigateur. Le dashboard permet de :
+
+- démarrer et arrêter le bot, vérifier Twitch et Ollama, reconnecter le compte
+  via un code à saisir sur Twitch dans ton navigateur habituel ;
+- régler la chaîne, la mention, le contexte, le ton, la longueur et la pause entre
+  réponses ; le changement de chaîne nécessite l'arrêt du bot ;
+- essayer une réponse du modèle en privé, sans publier sur Twitch ni enregistrer
+  l'essai dans la mémoire des viewers ;
+- suivre les messages reçus, réponses envoyées, délais de traitement et événements ;
+- consulter le compte-rendu existant et l'exporter en Markdown, JSON, HTML ou PDF.
+
+Les réglages sont conservés dans `config/dashboard.yaml` (ignoré par Git). Ils
+complètent `config/chat_agent.yaml` et s'appliquent aux prochains messages. Les
+sollicitations traitées pendant la pause sont ignorées ; le modèle traite les
+messages séquentiellement. La pause s'applique aussi aux commandes. Les règles
+anti-spoilers, le ton et la longueur sont des consignes au modèle, pas des garanties.
+
+Le dashboard écoute uniquement sur cet ordinateur. Fermer son onglet ne coupe pas
+le bot : utilise **Arrêter le bot**, puis Ctrl+C dans le terminal pour fermer le
+serveur. Arrête préalablement tout bot lancé dans un autre terminal. Le serveur de
+développement local n'est pas destiné à être publié sur Internet.
+
+Les métriques commencent au lancement du bot depuis le dashboard. Le débit apparaît
+après une minute et exclut le compte bot ; le délai mesure le traitement local, pas
+l'arrivée visible chez les viewers. Un historique agrégé est conservé dans
+`logs/dashboard-sessions.json` à l'arrêt. Le compte-rendu affiché est le fichier
+existant et peut contenir des informations de sessions précédentes. La mémoire
+SQLite reste commune aux chaînes. Le dashboard tente de renouveler un jeton expiré à la vérification ou au démarrage ;
+si Twitch refuse le renouvellement, utilise Reconnecter Twitch. Une déconnexion
+IRC pendant le live nécessite un redémarrage manuel du bot. Le renouvellement
+suit la [documentation Twitch](https://dev.twitch.tv/docs/authentication/refresh-tokens/). L'import de documents et la veille planifiée restent en CLI.
+
+### Conversation et recherche web
+
+Dans Twitch, adresse une question à `@LumiTheBoat`. Le routeur choisit la
+conversation, les documents ou le web. Une demande explicite comme
+`@LumiTheBoat cherche sur internet les nouveautés du dernier patch de Minecraft`
+force la recherche web. `!search ta question` reste disponible.
+
+L'agent de recherche transforme la question en requête, récupère des extraits,
+puis prépare une réponse courte avec les consignes de personnalité du bot.
+Les liens publiés proviennent des résultats du moteur ; le code retire les URL
+inventées par le modèle et préserve une source lors du raccourcissement pour Twitch.
+En cas d'indisponibilité, Lumi le dit au lieu de répondre de mémoire.
+Les extraits peuvent être incomplets ou anciens : les citations ne garantissent
+pas l'exactitude de toutes les affirmations du modèle.
+
+L'essai privé du dashboard utilise aussi le routeur et l'agent web, sans envoi
+Twitch ni mémoire viewer. Il ne teste pas la recherche documentaire. Une question
+routée vers le web est transmise au moteur de recherche après filtrage des données
+personnelles ; l'historique privé des viewers n'est pas transmis au moteur.
+
 ---
 
 ## Sommaire
