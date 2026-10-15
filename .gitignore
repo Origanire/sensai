@@ -16,6 +16,9 @@ lib64
 
 # Secrets / config locale
 .env
+.bot.lock
+config/dashboard.yaml
+logs/dashboard-sessions.json
 
 # IDE
 .vscode/
