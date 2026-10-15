@@ -9,6 +9,7 @@
 import argparse
 import os
 import re
+import sys
 import textwrap
 import time
 
@@ -16,6 +17,8 @@ from dotenv import load_dotenv
 
 from src.core.ollama_client import OllamaClient, load_config
 from src.core.prompts import load_prompt
+from src.core.bot_settings import load_bot_settings, bot_persona
+from src.core.bot_runtime import acquire_bot_lock, emit
 from src.tools.twitch_chat import (
     MAX_MESSAGE_LENGTH,
     connect,
@@ -73,13 +76,19 @@ class ChatOutput:
     # @param sock Socket opened by connect().
     # @param channel Name of the channel, without the "#".
     # @param writable True if the socket is logged in with a bot account.
-    def __init__(self, sock, channel, writable):
+    def __init__(self, sock, channel, writable, cooldown=0):
         ## @brief Socket of the chat connection.
         self.sock = sock
         ## @brief Name of the channel.
         self.channel = channel
         ## @brief True if messages can be sent to the chat.
         self.writable = writable
+        self.cooldown = cooldown
+        self.last_post_at = None
+        self.request_started = None
+
+    def can_reply(self):
+        return self.last_post_at is None or time.monotonic() - self.last_post_at >= self.cooldown
 
     ## @brief Send a reply to the chat only, without printing it.
     #
@@ -88,11 +97,20 @@ class ChatOutput:
     # @param text Reply to send.
     def post(self, text):
         if not self.writable or self.sock is None:
-            return
+            return False
+        if not self.can_reply():
+            emit("cooldown")
+            return False
         try:
             send_message(self.sock, self.channel, text)
+            self.last_post_at = time.monotonic()
+            elapsed = self.last_post_at - self.request_started if self.request_started is not None else None
+            emit("reply", latency=round(elapsed, 3) if elapsed is not None else None)
+            return True
         except OSError as error:
+            emit("warning", message="Échec de l'envoi d'une réponse à Twitch.")
             print(f"[chat] envoi impossible : {error}")
+            return False
 
     ## @brief Print a reply in the terminal and send it to the chat.
     #
@@ -383,6 +401,8 @@ def format_search_reply(answer, limit):
         return textwrap.shorten(text, limit, placeholder="...")
 
     source = urls[0].rstrip(".,;:")
+    if len(source) > limit - 20:
+        return textwrap.shorten("La source trouvée a une adresse trop longue pour le chat.", limit, placeholder="...")
     body = textwrap.shorten(text, limit - len(source) - 1, placeholder="...")
     return f"{body} {source}"
 
@@ -514,7 +534,10 @@ def respond(ctx, viewer_id, state, question):
         else:
             print(f"Sensai : @{state.display_name} {reply}")
     elif choice == "web":
-        reply = ask_internet(question, ctx["client"], ctx["internet"]["max_results"])
+        emit("research", stage="started")
+        reply = ask_internet(question, ctx["client"], ctx["internet"]["max_results"], persona=ctx["persona"])
+        reply = format_search_reply(reply, MAX_MESSAGE_LENGTH - len(state.display_name) - 2)
+        emit("research", stage="unavailable" if reply == SEARCH_UNAVAILABLE else "completed")
         print(f"Sensai : @{state.display_name} {reply}")
 
     if choice == "chat":
@@ -561,7 +584,7 @@ def write_session_stats(activity, stats):
 # (environment or .env); without them, the agent reads the chat
 # anonymously and its replies only appear in the terminal. With --local,
 # no connection is made: the chat is typed in the terminal.
-def main():
+def run_agent():
     parser = argparse.ArgumentParser(description="Agent chat Twitch de Sensai.")
     parser.add_argument("--local", action="store_true",
                         help="simuler le chat dans le terminal, sans Twitch")
@@ -569,7 +592,7 @@ def main():
 
     load_dotenv()
     config = load_config()
-    agent_config = load_config(AGENT_CONFIG)
+    agent_config = load_bot_settings()
     internet_settings = load_internet_settings(config)
     obs_settings = load_obs_settings(config)
 
@@ -606,7 +629,7 @@ def main():
         "rag": load_rag_settings(config),
         "internet": internet_settings,
         "template": load_prompt("viewer_context"),
-        "persona": load_prompt("persona").replace("{bot_name}", agent_config.get("bot_name", "Sensai")),
+        "persona": bot_persona(load_prompt("persona"), agent_config),
         "stats": {"blocked": 0, "searches": 0, "events": 0,
                   "routes": {"chat": 0, "docs": 0, "web": 0}},
     }
@@ -620,8 +643,9 @@ def main():
         bot_username = os.environ.get("TWITCH_BOT_USERNAME")
         bot_token = os.environ.get("TWITCH_OAUTH_TOKEN")
         sock = connect(channel, bot_username, bot_token)
-        chat = ChatOutput(sock, channel, writable=bool(bot_username and bot_token))
-        incoming = messages(sock)
+        chat = ChatOutput(sock, channel, writable=bool(bot_username and bot_token),
+                          cooldown=agent_config["reply_cooldown"])
+        incoming = messages(sock, on_ready=lambda: emit("connected", channel=channel))
         mode = f"as {bot_username}" if chat.writable else "anonymously (read-only)"
         print(f"Listening on #{channel} {mode}, trigger \"{trigger}\". Ctrl+C to quit.\n")
 
@@ -639,6 +663,20 @@ def main():
 
     try:
         for message in incoming:
+            # Never reply to our own account, including in local replay tools.
+            if message["author"].lower() == (os.environ.get("TWITCH_BOT_USERNAME") or "").lower():
+                continue
+            emit("message", viewer=message["user_id"])
+            # Atomic dashboard writes allow safe live updates between messages.
+            try:
+                current = load_bot_settings()
+                trigger = current["trigger"]
+                chat.cooldown = current["reply_cooldown"]
+                ctx["persona"] = bot_persona(load_prompt("persona"), current)
+                agent_config = current
+            except (OSError, ValueError):
+                emit("warning", message="Réglages illisibles ; derniers réglages conservés.")
+            chat.request_started = time.monotonic()
             viewer_id = message["user_id"]
             if viewer_id not in activity:
                 remember_viewer(
@@ -663,6 +701,12 @@ def main():
                 )
 
             command = parse_command(message["text"], command_prefix)
+            question = match_trigger(message["text"], trigger)
+            if question is None and not agent_config["mentions_only"] and command is None:
+                question = message["text"]
+            if (command is not None or question is not None) and not chat.can_reply():
+                emit("cooldown")
+                continue
             if command is not None:
                 name, arguments = command
                 author = message["display_name"]
@@ -712,10 +756,10 @@ def main():
                                 internet_settings, obs_settings, guardrails,
                             )
                 except Exception as error:
+                    emit("warning", message="Une commande n'a pas pu être exécutée.")
                     print(f"[command] {name} a échoué : {error}")
                 continue
 
-            question = match_trigger(message["text"], trigger)
             if question is None:
                 continue
 
@@ -734,7 +778,9 @@ def main():
             )
 
             reply = respond(ctx, viewer_id, state, question)
+            emit("activity", blocked=ctx["stats"]["blocked"], routes=ctx["stats"]["routes"])
             if reply is None:
+                emit("warning", message="Le modèle n'a pas produit de réponse.")
                 continue
             chat.post(f"@{state.display_name} {reply}")
 
@@ -757,6 +803,22 @@ def main():
         if sock is not None:
             sock.close()
         db_connection.close()
+        ctx["chunks"].close()
+
+
+def main():
+    if "--local" in sys.argv:
+        run_agent()
+        return
+    with acquire_bot_lock():
+        emit("starting")
+        try:
+            run_agent()
+        except Exception:
+            emit("error", message="Le bot s'est interrompu. Vérifie Twitch, Ollama et les réglages.")
+            raise
+        finally:
+            emit("stopped")
 
 
 if __name__ == "__main__":
