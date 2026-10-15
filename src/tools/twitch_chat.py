@@ -169,8 +169,9 @@ def parse_privmsg(line):
 # @return Iterator over the dictionaries produced by parse_privmsg().
 # @exception ConnectionError If Twitch rejects the login or closes the
 #            connection.
-def messages(sock):
+def messages(sock, on_ready=None):
     buffer = ""
+    ready = False
     while True:
         data = sock.recv(4096)
         if not data:
@@ -188,6 +189,11 @@ def messages(sock):
                     "Twitch a refusé la connexion du bot : vérifie "
                     "TWITCH_BOT_USERNAME et TWITCH_OAUTH_TOKEN dans .env."
                 )
+
+            if not ready and (" JOIN #" in line or " ROOMSTATE #" in line):
+                ready = True
+                if on_ready is not None:
+                    on_ready()
 
             message = parse_privmsg(line)
             if message is not None:
