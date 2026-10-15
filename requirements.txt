@@ -10,3 +10,5 @@ fpdf2
 # Agent Internet <-> Chat / OBS
 obsws-python
 python-dotenv
+# Dashboard local
+Flask>=3.1,<4
