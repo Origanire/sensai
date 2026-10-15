@@ -9,6 +9,9 @@
 # The router is a small model call constrained to a JSON schema: it only
 # classifies, it never answers. Any failure falls back to "chat".
 
+import re
+
+
 ## @brief Routes the router may choose, with what they cover.
 ROUTES = {
     "chat": "conversation, salutation, avis, blague, question sur le viewer lui-même",
@@ -60,10 +63,15 @@ Message : {question}"""
 # @param client OllamaClient.
 # @return "chat", "docs" or "web".
 def route(question, client):
+    # Explicit tool requests do not depend on a probabilistic classifier.
+    if re.search(r"^(?:(?:peux-tu|tu peux|pourrais-tu)\s+)?(?:cherche(?:r)?|recherche(?:r)?|fais une recherche)\b", question.strip(), re.I):
+        return "web"
+    if re.search(r"\b(?:cherche|recherche|vérifie|verifie|trouve)\b.{0,60}\b(?:web|internet|en ligne|sources?)\b", question, re.I):
+        return "web"
     routes = "\n".join(f'- "{name}" : {scope}' for name, scope in ROUTES.items())
     answer = client.chat_json(
         [{"role": "user", "content": ROUTER_PROMPT.format(routes=routes, question=question)}],
         ROUTER_SCHEMA,
     )
-    choice = (answer or {}).get("route")
+    choice = answer.get("route") if isinstance(answer, dict) else None
     return choice if choice in ROUTES else DEFAULT_ROUTE
