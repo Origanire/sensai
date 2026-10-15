@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="csrf-token" content="__CSRF__"><title>SENSAI · LumiTheBoat</title><link rel="stylesheet" href="/assets/style.css"><script src="/assets/app.js" defer></script></head><body>
+
+<div id="lumi-studio" aria-label="Dashboard SENSAI">
+  <header class="ls-top">
+    <div class="ls-logo"><span class="ls-logo-icon"><i data-lucide="sailboat" aria-hidden="true"></i></span>SENSAI <small>/ Lumi</small></div>
+    <span class="ls-tag" id="connection-status">Dashboard local · connexion en cours</span>
+  </header>
+  <div id="global-error" class="ls-error-banner" role="alert" hidden></div><div class="ls-shell">
+    <nav class="ls-side" aria-label="Navigation du dashboard">
+      <div class="ls-side-label">ESPACE STREAMER</div>
+      <button class="ls-nav cursor-interaction" data-page="pilot" aria-current="page"><i data-lucide="sliders-horizontal" aria-hidden="true"></i>Pilotage</button>
+      <button class="ls-nav cursor-interaction" data-page="context"><i data-lucide="notebook-pen" aria-hidden="true"></i>Contexte</button>
+      <button class="ls-nav cursor-interaction" data-page="features"><i data-lucide="blocks" aria-hidden="true"></i>Capacités</button>
+      <button class="ls-nav cursor-interaction" data-page="review"><i data-lucide="chart-no-axes-combined" aria-hidden="true"></i>Bilan du live</button>
+      <div class="ls-side-foot"><strong>LumiTheBoat</strong>Compte bot dédié<br>OriganireTV</div>
+    </nav>
+    <main class="ls-main-area">
+      <section data-screen="pilot" aria-label="Pilotage du bot">
+        <div class="ls-heading"><div><h1>À toi de piloter.</h1><p class="ls-subtitle">Une chaîne, un bot, des réglages compréhensibles.</p></div><button class="cursor-interaction" id="ls-pause" aria-pressed="false"><span id="ls-pause-text">Démarrer le bot</span></button></div>
+        <div class="ls-grid">
+          <div class="ls-stack">
+            <section class="ls-panel">
+              <div class="ls-panel-head"><h2>Connexion Twitch</h2><span class="ls-tag" id="twitch-status">Accès à vérifier</span></div>
+              <div class="ls-account"><div class="ls-avatar"><i data-lucide="sailboat" aria-hidden="true"></i></div><div><h3>LumiTheBoat</h3><span class="ls-muted">Le compte qui écrit dans le chat</span></div></div>
+              <label class="ls-field" for="ls-channel">Chaîne à suivre<input id="ls-channel" value="OriganireTV" spellcheck="false" maxlength="25" autocomplete="off"></label>
+              <label class="ls-field" for="ls-trigger">Le bot répond quand on écrit…<input id="ls-trigger" value="@LumiTheBoat" spellcheck="false" maxlength="40" autocomplete="off"></label>
+              <div class="ls-row" style="margin-top:14px"><button class="cursor-interaction" id="check-access">Vérifier les connexions</button><button class="cursor-interaction" id="connect-account">Reconnecter Twitch</button></div><div class="ls-info" id="auth-box" hidden><p id="auth-message"></p><p id="auth-code" class="ls-auth-code"></p><a href="https://www.twitch.tv/activate" target="_blank" rel="noreferrer">Ouvrir Twitch dans mon navigateur</a></div><p class="ls-muted" style="margin-top:12px">Le compte du bot et la chaîne suivie sont distincts. La mémoire actuelle reste partagée si tu changes de chaîne.</p>
+            </section>
+            <section class="ls-panel">
+              <div class="ls-panel-head"><h2>Rythme des réponses</h2><span class="ls-tag ls-ready">Réglage actif</span></div>
+              <label class="ls-field" for="ls-cadence"><span class="ls-row ls-between"><span>Pause minimum entre deux réponses</span><output class="ls-value" id="ls-cadence-value">15 s</output></span><input type="range" id="ls-cadence" min="0" max="120" step="5" value="15"></label>
+              <div class="ls-minmax"><span>Sans pause</span><span>2 minutes</span></div>
+              <label class="ls-check"><input type="checkbox" id="ls-mention" checked> Répondre uniquement aux mentions et commandes</label>
+              <p class="ls-muted" style="margin-top:13px">Pendant cette pause, les sollicitations sont ignorées. Les délais propres à !search (30 s) et !moment (60 s par viewer) restent appliqués.</p>
+            </section>
+          </div>
+          <aside class="ls-stack">
+            <section class="ls-panel">
+              <div class="ls-panel-head"><h2>Essai privé avec l’IA</h2><span class="ls-tag">Aucun envoi Twitch</span></div>
+              <div class="ls-live-label" id="ls-sim-status">Réponse avec tes réglages actuels</div>
+              <div class="ls-chat-line"><strong>Ton message d’essai</strong><p id="ls-viewer-text">@LumiTheBoat salut !</p></div>
+              <div class="ls-chat-line ls-chat-reply" aria-live="polite"><strong>LumiTheBoat <span class="ls-tag">BOT</span></strong><p id="ls-answer">Écris un message pour tester le contexte et le ton des réponses.</p></div>
+              <label class="ls-field" for="ls-message">Message d’essai<input id="ls-message" value="@LumiTheBoat salut !" maxlength="200" autocomplete="off"></label>
+              <button class="cursor-interaction" id="ls-simulate" style="margin-top:12px;width:100%">Tester avec le modèle</button>
+              <p class="ls-muted" style="margin-top:12px">Cet essai appelle Ollama, sans modifier la mémoire des viewers.</p>
+            </section>
+            <section class="ls-panel">
+              <div class="ls-panel-head"><h2>Le bot aujourd’hui</h2></div>
+              <div class="ls-summary-list"><div><span>Conversation</span><strong id="bot-state-text">Arrêté</strong></div><div><span>Modèle local</span><strong id="model-name">Vérification…</strong></div><div><span>Mémoire viewers</span><strong>Persistante</strong></div><div><span>Temps de réponse</span><strong id="pilot-latency">Aucune mesure</strong></div></div>
+              <hr class="ls-divider"><button class="cursor-interaction" data-go="features">Voir toutes les capacités →</button>
+            </section>
+          </aside>
+        </div>
+      </section>
+      <section data-screen="context" aria-label="Contexte et personnalité" hidden>
+        <div class="ls-heading"><div><h1>Ce que Lumi doit savoir.</h1><p class="ls-subtitle">Ta personnalité, tes règles et les informations du live.</p></div><span class="ls-tag ls-ready">Appliqué aux prochains messages</span></div>
+        <div class="ls-grid">
+          <section class="ls-panel">
+            <div class="ls-panel-head"><h2>Contexte du stream</h2></div>
+            <label class="ls-field" for="ls-game">Jeu ou sujet du jour<input id="ls-game" placeholder="Ex. : découverte d’un jeu, discussion…" maxlength="100"></label>
+            <label class="ls-field" for="ls-context">Informations à connaître<textarea id="ls-context" placeholder="Objectif du live, règles de chat, informations confirmées…" maxlength="2500"></textarea></label>
+            <div class="ls-field-pair"><label class="ls-field" for="ls-tone">Ton des réponses<select id="ls-tone"><option value="friendly">Amical et naturel</option><option value="calm">Calme et discret</option><option value="energetic">Enthousiaste</option></select></label><label class="ls-field" for="ls-length">Longueur souhaitée<select id="ls-length"><option value="short">Une ou deux phrases</option><option value="brief">Une phrase courte</option></select></label></div>
+            <label class="ls-check"><input type="checkbox" checked id="ls-spoilers"> Éviter les spoilers</label>
+            <p class="ls-muted" style="margin-top:14px">Les filtres de sécurité restent appliqués dans le code. Enregistre pour utiliser ces consignes dans le chat Twitch.</p>
+          </section>
+          <aside class="ls-stack">
+            <section class="ls-panel"><div class="ls-panel-head"><h2>Consignes proposées</h2></div><p id="ls-context-preview" style="font-size:13px">Lumi répond avec un ton amical, en une ou deux phrases. Il n’invente aucune information sur le live et évite les spoilers.</p></section>
+            <section class="ls-panel"><div class="ls-panel-head"><h2>Connaissances de la chaîne</h2><span class="ls-tag ls-proposed">À préparer</span></div><p class="ls-muted">Planning, FAQ, matériel et liens officiels. La recherche documentaire existe ; il faut installer son modèle et remplacer la FAQ d’exemple.</p><hr class="ls-divider"><span class="ls-tag">Formats : TXT · MD · PDF · DOCX</span></section>
+          </aside>
+        </div>
+      </section>
+      <section data-screen="features" aria-label="Capacités du projet" hidden>
+        <div class="ls-heading"><div><h1>Tout ce que Lumi peut faire.</h1><p class="ls-subtitle">Le code existant, les prérequis et ce qui reste à construire.</p></div></div>
+        <div class="ls-row"><span class="ls-tag ls-ready">Validé en direct</span><span class="ls-tag">Présent dans le code</span><span class="ls-tag ls-proposed">Préparation nécessaire</span></div>
+        <div class="ls-section-label">Fonctionnalités actuelles</div>
+        <div class="ls-feature-grid" id="ls-features"></div>
+        <section class="ls-panel ls-detail" id="ls-detail" aria-live="polite"><h2 id="ls-detail-title">Conversation sur Twitch</h2><p id="ls-detail-description">Répond aux mentions et cite le viewer avec son compte bot dédié. La connexion et une réponse réelle ont été validées avec toi.</p><code id="ls-detail-command">@LumiTheBoat salut</code></section>
+        <div class="ls-section-label">Pour une prochaine version</div>
+        <div class="ls-panel ls-summary-list"><div><span>File de réponses pendant une pause</span><strong>Non implémentée</strong></div><div><span>Reconnexion automatique en plein live</span><strong>À développer</strong></div><div><span>Mémoire séparée par chaîne</span><strong>À développer</strong></div><div><span>Comparaison avec / sans bot</span><strong>À instrumenter</strong></div></div>
+      </section>
+      <section data-screen="review" aria-label="Bilan et analyse" hidden>
+        <div class="ls-heading"><div><h1>Un bilan utile, pas du bruit.</h1><p class="ls-subtitle">Messages reçus hors compte du bot, réponses envoyées et temps de traitement.</p></div><span class="ls-tag" id="session-label">Aucune session démarrée</span></div>
+        <div class="ls-metrics"><div class="ls-panel ls-metric"><span class="ls-muted">Messages hors Lumi / min</span><strong id="metric-rate">—</strong><span class="ls-muted">Moyenne depuis la connexion · après 1 min</span></div><div class="ls-panel ls-metric"><span class="ls-muted">Réponses du bot</span><strong id="metric-replies">—</strong><span class="ls-muted">Envois effectués par le bot</span></div><div class="ls-panel ls-metric"><span class="ls-muted">Traitement médian</span><strong id="metric-latency">—</strong><span class="ls-muted">Routage et génération des réponses</span></div></div>
+        <div class="ls-grid"><section class="ls-panel"><div class="ls-panel-head"><h2>Compte-rendu du stream</h2><span class="ls-tag">Fichier réel</span></div><p class="ls-muted">Compte-rendu conservé entre les sessions : il peut inclure des lives précédents.</p><div class="ls-summary-list"><div><span>Résumé</span><strong>Mise à jour par événement</strong></div><div><span>Moments forts</span><strong>!moment et pics du chat</strong></div><div><span>Statistiques</span><strong>Écrites à l’arrêt du bot</strong></div></div><hr class="ls-divider"><label class="ls-field" for="ls-export">Format d’export<select id="ls-export"><option value="md">Markdown</option><option value="json">JSON</option><option value="pdf">PDF</option><option value="html">HTML</option></select></label><button class="cursor-interaction" id="export-report" style="margin-top:12px">Télécharger</button> <button class="cursor-interaction" id="ls-report" style="margin-top:12px">Actualiser le compte-rendu</button><div class="ls-report-preview" id="ls-report-preview">Aucun compte-rendu pour le moment.</div></section><section class="ls-panel"><div class="ls-panel-head"><h2>Le bot aide-t-il vraiment ?</h2></div><div class="ls-steps"><div class="ls-step"><span>1</span><div><h3>Observer un live sans bot</h3><p class="ls-muted">Durée, audience et messages humains.</p></div></div><div class="ls-step"><span>2</span><div><h3>Comparer un live similaire</h3><p class="ls-muted">Même jeu et créneau, avec le bot.</p></div></div><div class="ls-step"><span>3</span><div><h3>Présenter les écarts</h3><p class="ls-muted">Messages/min et interactions, sans attribuer tout changement au bot.</p></div></div></div></section></div>
+      </section>
+      <section class="ls-panel" style="margin-top:20px"><div class="ls-panel-head"><h2>Journal du bot</h2><span class="ls-tag" id="session-counts">Pas encore de session</span></div><div id="event-log" aria-live="polite"><p class="ls-muted">Les événements apparaîtront au démarrage du bot.</p></div></section><div class="ls-validation" id="ls-error" role="alert" hidden></div>
+      <footer class="ls-foot"><span id="ls-save-state" class="ls-muted" aria-live="polite">Réglages enregistrés</span><button class="ls-main cursor-interaction" id="ls-save">Enregistrer les réglages</button></footer>
+    </main>
+  </div>
+  <div class="ls-notice"><i data-lucide="info" aria-hidden="true"></i><span id="ls-footer-note">SENSAI fonctionne sur cet ordinateur. Fermer cet onglet ne coupe pas le bot ; utilise Arrêter le bot.</span></div>
+</div>
+
+</body></html>
