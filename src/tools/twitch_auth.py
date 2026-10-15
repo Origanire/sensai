@@ -24,6 +24,10 @@ class AuthError(Exception):
     """An actionable error safe to show without exposing credentials."""
 
 
+class ExpiredToken(AuthError):
+    """Only invalid/expired credentials are eligible for refresh."""
+
+
 def request_json(method, endpoint, **kwargs):
     """Never include request/response bodies or headers in error messages."""
     try:
@@ -44,8 +48,10 @@ def validate_token(token, client_id, bot):
     status, identity = request_json(
         "GET", "validate", headers={"Authorization": f"OAuth {token}"},
     )
+    if status == 401:
+        raise ExpiredToken("Le jeton est expiré ou refusé. Relance la connexion Twitch.")
     if status != 200:
-        raise AuthError("Le jeton est expiré ou refusé. Relance la connexion Twitch.")
+        raise AuthError("La vérification Twitch a échoué. Réessaie.")
     if identity.get("client_id") != client_id:
         raise AuthError("Ce jeton appartient à une autre application Twitch.")
     if identity.get("login", "").lower() != bot.lower():
@@ -56,7 +62,7 @@ def validate_token(token, client_id, bot):
     if not SCOPES.issubset(identity.get("scopes") or []):
         raise AuthError("Les permissions de lecture et d'écriture du chat sont nécessaires.")
     if identity.get("expires_in", 0) <= 0:
-        raise AuthError("Le jeton Twitch a expiré. Relance la connexion.")
+        raise ExpiredToken("Le jeton Twitch a expiré. Relance la connexion.")
     return identity
 
 
@@ -68,7 +74,7 @@ def save_settings(values, path=ENV_PATH):
     """
     path = Path(path)
     for key, value in values.items():
-        if not re.fullmatch(r"[A-Z_]+", key) or not re.fullmatch(r"[a-zA-Z0-9:._-]+", str(value)):
+        if not re.fullmatch(r"[A-Z_]+", key) or not re.fullmatch(r"[a-zA-Z0-9:._~%/+=-]+", str(value)):
             raise AuthError("Valeur de configuration Twitch invalide.")
     remaining = dict(values)
     lines = []
@@ -93,7 +99,22 @@ def save_settings(values, path=ENV_PATH):
             os.unlink(name)
 
 
-def authorize(client_id, bot, path=ENV_PATH):
+def refresh_authorization(client_id, bot, refresh_token, path=ENV_PATH):
+    """Renew an existing public-client grant without requesting new scopes."""
+    if not refresh_token:
+        raise AuthError("Reconnecte le compte Twitch depuis le dashboard.")
+    status, result = request_json("POST", "token", data={
+        "client_id": client_id, "grant_type": "refresh_token", "refresh_token": refresh_token,
+    })
+    if status != 200 or not result.get("access_token") or not result.get("refresh_token"):
+        raise AuthError("L'autorisation Twitch doit être renouvelée. Utilise Reconnecter Twitch.")
+    identity = validate_token(result["access_token"], client_id, bot)
+    save_settings({"TWITCH_OAUTH_TOKEN": result["access_token"],
+                   "TWITCH_REFRESH_TOKEN": result["refresh_token"]}, path)
+    return identity
+
+
+def authorize(client_id, bot, path=ENV_PATH, on_device=None):
     """Wait for explicit browser authorization, validate it, then save tokens."""
     status, device = request_json("POST", "device", data={
         "client_id": client_id, "scopes": " ".join(sorted(SCOPES)),
@@ -104,11 +125,14 @@ def authorize(client_id, bot, path=ENV_PATH):
         raise AuthError("La réponse d'activation Twitch est incomplète.")
     interval = max(5, int(device.get("interval", 5)))
     deadline = time.monotonic() + int(device["expires_in"])
-    print(f"Connecte-toi avec {bot} dans ton navigateur habituel.", flush=True)
-    print("Ouvre https://www.twitch.tv/activate", flush=True)
-    print(f"Code à saisir : {device['user_code']}", flush=True)
-    print(f"Valable {int(device['expires_in']) // 60} minutes. Autorise la lecture et l'envoi de messages.", flush=True)
-    print("En attente de ton autorisation…", flush=True)
+    if on_device:
+        on_device({"user_code": device["user_code"], "expires_in": int(device["expires_in"])})
+    else:
+        print(f"Connecte-toi avec {bot} dans ton navigateur habituel.", flush=True)
+        print("Ouvre https://www.twitch.tv/activate", flush=True)
+        print(f"Code à saisir : {device['user_code']}", flush=True)
+        print(f"Valable {int(device['expires_in']) // 60} minutes. Autorise la lecture et l'envoi de messages.", flush=True)
+        print("En attente de ton autorisation…", flush=True)
     while time.monotonic() < deadline:
         time.sleep(min(interval, max(0, deadline - time.monotonic())))
         if time.monotonic() >= deadline:
