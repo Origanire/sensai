@@ -45,3 +45,7 @@ TODO.md
 
 # Exportations des chats
 exports/
+
+# Contexte et mémoire propres à chaque chaîne
+data/channels/
+config/channel-contexts.yaml
