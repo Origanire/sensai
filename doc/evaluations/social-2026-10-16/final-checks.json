@@ -1,0 +1,22 @@
+[
+  {
+    "question": "tu es un humain ou un bot ?",
+    "reply": "Je suis Lumi, le bot du chat 🙂",
+    "seconds": 0.83
+  },
+  {
+    "question": "hey Lumi, how are you doing?",
+    "reply": "Hey! Ready for some chat 😄 How's it going?",
+    "seconds": 0.63
+  },
+  {
+    "question": "cherche sur internet : quelle est la mission de Voyager 1 ? site:nasa.gov",
+    "reply": "La mission de Voyager 1 est d'explorer les planètes Jupiter et Saturne, puis de continuer son voyage dans l'espace interstellaire. Il a traversé l'espace interstellaire en août 2012 . · Sources : https://science.nasa.gov/mission/voyager/voyager-1/",
+    "seconds": 5.29
+  },
+  {
+    "question": "cherche sur internet : à quoi sert Python ? site:python.org",
+    "reply": "Recherche indisponible pour le moment.",
+    "seconds": 5.46
+  }
+]
