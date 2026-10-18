@@ -1,9 +1,12 @@
 # ollama pull <model>
-model: llama3.2
+model: qwen3:14b
 
 ollama_url: http://localhost:11434
 
 max_tokens: 1024
+# Réponses directes pour le chat, sans phase de raisonnement visible.
+think: false
+context_window: 8192
 
 # 0 = très déterministe / répétitif, 1 = très créatif / aléatoire
 temperature: 0.7
