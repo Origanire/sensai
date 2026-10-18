@@ -7,6 +7,7 @@ import html
 import io
 import json
 import os
+import re
 from pathlib import Path
 import secrets
 import signal
@@ -21,13 +22,16 @@ from flask import Flask, Response, jsonify, request, send_file
 import requests
 import yaml
 
-from src.core.bot_settings import ROOT, load_bot_settings, public_settings, save_bot_settings, validate_settings, bot_persona
+from src.core.bot_settings import ROOT, load_bot_settings, public_settings, save_bot_settings, validate_settings, bot_persona, channel_settings
 from src.core.bot_runtime import bot_is_running
 from src.core.guardrails import load_guardrails
 from src.core.ollama_client import OllamaClient
 from src.core.prompts import load_prompt
-from src.agents.router import route
+from src.core.channel_knowledge import load_faq, save_faq, faq_prompt, memory_status, load_profile, save_profile, PROFILE_QUESTIONS
+from src.core.chat_text import fit_chat_text, PING_REPLY
+from src.agents.router import route, explicit_search
 from src.tools.web_search import ask_internet, load_internet_settings
+from src.tools.live_audio import dependencies_ready
 from src.tools.report import SECTION_TITLES, DEFAULT_SECTIONS, render_report
 from src.tools.twitch_auth import AuthError, validate_token, authorize, ExpiredToken, refresh_authorization
 
@@ -50,6 +54,7 @@ class BotController:
         self.phase = "stopped"
         self.auth = {"phase": "idle"}
         self.active_channel = None
+        self.audio_stage = "stopped"
         self.events = deque(maxlen=60)
         self.health = {"twitch": "unchecked", "ollama": "unchecked", "model": None, "embedding_ready": False}
         self.metrics = self.empty_metrics()
@@ -244,10 +249,27 @@ class BotController:
             self.log("Réponse envoyée" + (f" · traitement {latency:.1f} s" if latency is not None else "") + ".")
         elif kind == "research":
             self.log({"started": "Lumi consulte l’agent de recherche web.",
-                      "completed": "Recherche terminée ; réponse avec sources préparée.",
+                      "completed": "Recherche terminée ; réponse vérifiée sur des extraits, sans lien dans le chat.",
                       "unavailable": "Recherche indisponible ; Lumi le signalera dans le chat."}.get(event.get("stage"), "Recherche web."))
+        elif kind == "audio":
+            stage = event.get("stage")
+            labels = {"starting": "Connexion au son du live…", "loading": "Chargement du modèle vocal local…",
+                      "listening": "Écoute du live active · transcription locale.", "missing": "Dépendances vocales absentes : installe requirements-audio.txt.",
+                      "unavailable": "Son du live indisponible (hors ligne, accès refusé ou erreur de transcription). Nouvel essai dans 60 s.",
+                      "stopped": "Écoute vocale arrêtée.", "answered": "Demande vocale traitée dans le chat.",
+                      "cooldown": "Demande vocale ignorée pendant la pause."}
+            if stage in labels:
+                if stage != self.audio_stage:
+                    self.log(labels[stage], "warning" if stage in {"missing", "unavailable"} else "info")
+                if stage not in {"answered", "cooldown"}:
+                    self.audio_stage = stage
+        elif kind == "memory":
+            self.log("Une préférence de jeu explicite a été mémorisée pour son auteur.")
+        elif kind == "mascot":
+            self.log("Lumi a réagi spontanément au chat.")
         elif kind == "cooldown":
             self.metrics["cooldown_skipped"] += 1
+            self.log("Sollicitation ignorée pendant la pause entre réponses.", "warning")
         elif kind == "activity":
             self.metrics["blocked"] = event["blocked"]
             self.metrics["routes"] = event["routes"]
@@ -281,6 +303,8 @@ class BotController:
         with self.lock:
             settings = public_settings(load_bot_settings(self.root))
             return {"phase": self.phase, "active_channel": self.active_channel, "settings": settings,
+                    "audio": {"stage": self.audio_stage if self.phase in {"starting", "running"} else "stopped", "dependencies_ready": dependencies_ready()},
+                    "memory": memory_status(settings["channel"], self.root),
                     "health": self.health, "auth": dict(self.auth), "metrics": self.metrics_snapshot(), "events": list(self.events),
                     "account": self.credentials()["TWITCH_BOT_USERNAME"],
                     "external_bot": self.process is None and bot_is_running(self.root / ".bot.lock")}
@@ -291,6 +315,7 @@ class BotController:
             changes = validate_settings(values)
             if self.phase in {"checking", "starting", "running", "stopping"} and changes.get("channel", settings["channel"]) != settings["channel"]:
                 raise DashboardError("Arrête le bot avant de changer de chaîne.")
+            changes = channel_settings(settings, changes, self.root)
             settings.update(changes)
             save_bot_settings(settings, self.root)
             self.log("Réglages enregistrés. Ils s'appliquent aux prochains messages.")
@@ -311,11 +336,20 @@ class BotController:
             client = OllamaClient(self.model_config())
             started = time.monotonic()
             # Strip only the configured mention, as the Twitch caller does.
-            query = verdict.text.replace(settings["trigger"], "").strip()
-            choice = route(query, client)
-            persona = bot_persona(load_prompt("persona"), settings)
+            from src.agents.chat_agent import match_trigger
+            addressed = match_trigger(verdict.text, settings["trigger"])
+            query = addressed if addressed is not None else verdict.text
+            if not query:
+                return {"reply": PING_REPLY, "seconds": 0, "blocked": False, "route": "chat"}
+            search_request = explicit_search(query)
+            if search_request is not None:
+                query = search_request
+                if not query:
+                    raise ValueError("Usage : !search ta question")
+            choice = "web" if search_request is not None else route(query, client, topic=settings["stream_topic"])
+            persona = bot_persona(load_prompt("persona"), settings) + faq_prompt(settings, self.root)
             if choice == "web":
-                response = ask_internet(query, client, load_internet_settings(self.model_config())["max_results"], persona=persona)
+                response = ask_internet(query, client, load_internet_settings(self.model_config())["max_results"], persona=persona, topic=settings["stream_topic"])
             else:
                 response = client.chat_silent([
                     {"role": "system", "content": persona},
@@ -323,7 +357,7 @@ class BotController:
                 ])
             if not response or not response.strip():
                 raise DashboardError("Le modèle n'a pas répondu. Vérifie Ollama et réessaie.")
-            return {"reply": guardrails.check_output(response).text, "seconds": round(time.monotonic()-started, 1), "blocked": False, "route": "web" if choice == "web" else "chat"}
+            return {"reply": fit_chat_text(guardrails.check_output(response).text, 500 - len("@Viewer ")), "seconds": round(time.monotonic()-started, 1), "blocked": False, "route": "web" if choice == "web" else "chat"}
         finally:
             self.preview_lock.release()
 
@@ -405,6 +439,34 @@ def create_app(controller=None):
     @app.post("/api/check")
     def check():
         return jsonify(controller.check())
+
+    @app.get("/api/streamer-profile")
+    def get_profile():
+        settings = load_bot_settings(controller.root)
+        return jsonify(channel=settings["channel"], questions=PROFILE_QUESTIONS, answers=load_profile(settings, controller.root))
+
+    @app.post("/api/streamer-profile")
+    def put_profile():
+        data = request.get_json()
+        settings = load_bot_settings(controller.root)
+        if not isinstance(data, dict) or data.get("channel") != settings["channel"]:
+            raise ValueError("La chaîne a changé. Recharge le questionnaire.")
+        answers = save_profile(settings, data.get("answers"), controller.root)
+        return jsonify(channel=settings["channel"], answers=answers)
+
+    @app.get("/api/faq")
+    def get_faq():
+        settings = load_bot_settings(controller.root)
+        return jsonify(channel=settings["channel"], content=load_faq(settings, controller.root))
+
+    @app.post("/api/faq")
+    def put_faq():
+        data = request.get_json()
+        settings = load_bot_settings(controller.root)
+        if not isinstance(data, dict) or data.get("channel") != settings["channel"]:
+            raise ValueError("La chaîne a changé. Recharge la FAQ avant de l’enregistrer.")
+        save_faq(settings, data.get("content"), controller.root)
+        return jsonify(channel=settings["channel"], content=load_faq(settings, controller.root))
 
     @app.post("/api/preview")
     def preview():
