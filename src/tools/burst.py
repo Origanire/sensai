@@ -1,75 +1,44 @@
-## @file burst.py
-# @brief Detection of chat activity bursts, used as automatic highlights.
-#
-# The anonymous chat connection gives no access to the real viewer count,
-# so the audience is estimated from the number of distinct chatters over
-# the last few minutes. The burst threshold scales with that audience:
-# 15 messages in 10 seconds is a lot for 5 chatters, nothing for 300.
+# Ce module détecte les pics d’activité du chat. Le seuil dépend du nombre de personnes qui écrivent, pas du nombre total de spectateurs.
 
 import math
 from collections import deque
 
 
-## @brief Sliding-window detector of message bursts.
+# Cette classe suit les messages récents pour repérer les pics d’activité.
 class BurstDetector:
-    ## @brief Build the detector.
-    #
-    # @param window Size of the burst window, in seconds.
-    # @param audience_window Window used to count active chatters, in seconds.
-    # @param ratio Messages required in the burst window per active chatter.
-    # @param min_messages Threshold floor, so a near-empty chat never bursts.
-    # @param cooldown Time after a burst during which no new one is reported,
-    #        in seconds, so a single burst is not logged several times.
+    # On règle la durée d’observation, le seuil de messages et la pause entre deux pics signalés.
     def __init__(self, window, audience_window, ratio, min_messages, cooldown):
-        ## @brief Size of the burst window, in seconds.
+        # Cette durée définit la période utilisée pour détecter un pic.
         self.window = window
-        ## @brief Window used to count active chatters, in seconds.
+        # Cette durée sert à compter les personnes actives dans le chat.
         self.audience_window = audience_window
-        ## @brief Messages required per active chatter.
+        # Ce nombre indique combien de messages sont attendus par personne active.
         self.ratio = ratio
-        ## @brief Threshold floor.
+        # Ce seuil minimum évite de signaler un pic dans un chat presque vide.
         self.min_messages = min_messages
-        ## @brief Silence after a burst, in seconds.
+        # Cette pause évite de signaler plusieurs fois le même pic.
         self.cooldown = cooldown
-        ## @brief Timestamps of the messages inside the burst window.
+        # On garde ici les dates des messages encore dans la période observée.
         self.recent = deque()
-        ## @brief Last message timestamp of each chatter.
+        # On conserve la date du dernier message de chaque personne.
         self.last_seen = {}
-        ## @brief Timestamp of the last reported burst, or None.
+        # Cette valeur indique la date du dernier pic signalé.
         self.last_burst = None
-        ## @brief Timestamp of the first message seen, or None.
+        # Cette valeur indique quand le premier message a été reçu.
         self.started = None
 
-    ## @brief Number of distinct chatters active over the audience window.
-    #
-    # Forgets the chatters who left the window, so the dictionary does not
-    # grow for the whole stream.
-    #
-    # @param now Current timestamp, in seconds.
-    # @return Number of active chatters.
+    # Cette fonction compte les personnes récemment actives et retire celles qui ne le sont plus.
     def audience(self, now):
         limit = now - self.audience_window
         for viewer_id in [v for v, seen in self.last_seen.items() if seen < limit]:
             del self.last_seen[viewer_id]
         return len(self.last_seen)
 
-    ## @brief Messages needed in the burst window for the current audience.
-    #
-    # @param now Current timestamp, in seconds.
-    # @return Threshold, in messages.
+    # Cette fonction calcule le seuil de messages adapté à l’activité actuelle du chat.
     def threshold(self, now):
         return max(self.min_messages, math.ceil(self.audience(now) * self.ratio))
 
-    ## @brief Record a message and tell whether it completes a burst.
-    #
-    # Nothing is reported until a full audience window has been observed:
-    # right after launch the audience is underestimated, and the regular
-    # chat flow would pass for a burst.
-    #
-    # @param viewer_id Twitch identifier of the author.
-    # @param sent_at Timestamp of the message, in seconds.
-    # @return A (messages, threshold, audience) tuple when a burst is
-    #         detected, None otherwise.
+    # Cette fonction ajoute un message et vérifie s’il forme un pic. Elle attend assez de données avant de signaler le premier.
     def add(self, viewer_id, sent_at):
         if self.started is None:
             self.started = sent_at

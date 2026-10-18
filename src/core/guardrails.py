@@ -1,14 +1,4 @@
-## @file guardrails.py
-# @brief Content and privacy guardrails (EV2): input and output interceptors.
-#
-# On input, a message is refused before it reaches the model when it tries
-# to take control of it (prompt injection, jailbreak) or is out of scope
-# (doxxing, harassment, illegal requests). Personal data (e-mail, phone,
-# IP, card, IBAN) is masked, so it is never sent to the model nor stored in
-# the viewer memory. On output, the same data and banned words are masked
-# before anything is posted in a public chat.
-#
-# Every rule lives in config/guardrails.yaml: the code only applies them.
+# Ce module filtre les messages et masque certaines données personnelles avant les appels au modèle et l’envoi des réponses.
 
 import re
 import unicodedata
@@ -16,27 +6,26 @@ from dataclasses import dataclass, field
 
 from src.core.ollama_client import load_config
 
-## @brief Configuration file of the guardrails.
+# Ce fichier contient les réglages des filtres.
 GUARDRAILS_CONFIG = "config/guardrails.yaml"
 
-## @brief Invisible characters used to split a word without changing its look.
+# Ces caractères invisibles peuvent servir à contourner les filtres.
 ZERO_WIDTH = re.compile("[​-‏⁠⁦-⁩﻿­]")
-## @brief Control characters and bidirectional overrides: invisible in the
-# chat, they can hide text or reverse its display.
+# Ces caractères de contrôle peuvent masquer du texte ou inverser son affichage.
 CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f\u202a\u202b\u202c\u202d\u202e]")
-## @brief Cyrillic and Greek letters that look like Latin ones.
+# Ces lettres grecques et cyrilliques ressemblent à des lettres latines.
 HOMOGLYPHS = str.maketrans({
     "а": "a", "е": "e", "о": "o", "р": "p", "с": "c", "х": "x", "у": "y",
     "і": "i", "ј": "j", "ѕ": "s", "к": "k", "м": "m", "т": "t", "н": "h",
     "α": "a", "ε": "e", "ο": "o", "ρ": "p", "ι": "i", "κ": "k", "ν": "v",
 })
-## @brief Leetspeak digits and symbols, decoded only in the compact form.
+# Ces chiffres et symboles remplacent parfois des lettres pour contourner les filtres.
 LEET = str.maketrans({
     "0": "o", "1": "i", "3": "e", "4": "a", "5": "s", "7": "t",
     "@": "a", "$": "s", "!": "i",
 })
 
-## @brief Personal data detectors, by kind.
+# Ces expressions repèrent les différentes catégories de données personnelles.
 PII_PATTERNS = {
     "email": re.compile(r"(?<![\w@])[\w.+-]+@[\w-]+(?:\.[\w-]+)+"),
     "iban": re.compile(r"\b[A-Z]{2}\d{2}(?:\s?[A-Z0-9]{4}){3,7}(?:\s?[A-Z0-9]{1,4})?\b"),
@@ -47,38 +36,30 @@ PII_PATTERNS = {
     ),
     "ip": re.compile(r"\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b"),
 }
-## @brief Order in which the detectors run: the most specific first, so a
-# card number is not reported as a phone number.
+# On commence par les détecteurs les plus précis pour éviter de confondre une carte avec un téléphone.
 PII_ORDER = ("email", "iban", "card", "phone", "ip")
-## @brief Display names of the kinds of personal data.
+# Ces noms servent à indiquer les données masquées.
 PII_LABELS = {
     "email": "email", "iban": "IBAN", "card": "carte", "phone": "téléphone", "ip": "IP",
 }
 
 
-## @brief Decision taken on a message.
+# Cette classe décrit le résultat du contrôle d’un message.
 @dataclass
 class Verdict:
-    ## @brief True if the message may go on.
+    # Cette valeur indique si le message est accepté.
     allowed: bool
-    ## @brief Text to use downstream (personal data masked).
+    # Ce texte nettoyé sera utilisé pour la suite du traitement.
     text: str
-    ## @brief Rule that refused the message ("injection", "doxxing"...), or None.
+    # Cette valeur indique la règle qui a bloqué le message, ou None.
     category: str | None = None
-    ## @brief Message to show the author when the message is refused.
+    # Ce message explique le refus à son auteur.
     message: str | None = None
-    ## @brief Kinds of personal data masked in the text.
+    # Cette liste indique les catégories de données masquées.
     redacted: list = field(default_factory=list)
 
 
-## @brief Remove what makes two identical-looking texts differ.
-#
-# NFKC folds full-width and stylized letters ("ｉｇｎｏｒｅ"), invisible
-# characters are dropped, look-alike Cyrillic/Greek letters become Latin,
-# and accents are removed so a rule written without them matches both.
-#
-# @param text Raw text.
-# @return Lowercase, accent-free text with single spaces.
+# Cette fonction uniformise le texte en retirant les accents, caractères invisibles et variantes de lettres pour faciliter les contrôles.
 def normalize(text):
     text = unicodedata.normalize("NFKC", text)
     text = ZERO_WIDTH.sub("", text).lower().translate(HOMOGLYPHS)
@@ -88,21 +69,12 @@ def normalize(text):
     return " ".join(text.split())
 
 
-## @brief Letters and digits only, leetspeak decoded.
-#
-# "j.a.i.l b-r-e-a-k" and "j41lbr34k" both become "jailbreak": keywords are
-# searched in this form, which defeats separators and digit swaps.
-#
-# @param normalized Text returned by normalize().
-# @return Compact text.
+# Cette fonction garde les lettres et chiffres et décode leurs substitutions pour repérer les mots volontairement séparés.
 def compact(normalized):
     return re.sub(r"[^a-z]", "", normalized.translate(LEET))
 
 
-## @brief Luhn checksum, used to tell a card number from any long number.
-#
-# @param digits String of digits.
-# @return True if the checksum is valid.
+# Cette fonction vérifie la somme de contrôle de Luhn pour reconnaître certains numéros de carte.
 def luhn_valid(digits):
     total = 0
     for position, char in enumerate(reversed(digits)):
@@ -115,23 +87,20 @@ def luhn_valid(digits):
     return total % 10 == 0
 
 
-## @brief Input and output interceptors driven by config/guardrails.yaml.
+# Cette classe applique les filtres d’entrée et de sortie définis dans la configuration.
 class Guardrails:
-    ## @brief Build the guardrails from their configuration.
-    #
-    # @param config Dictionary of config/guardrails.yaml; if None, the file
-    #               is loaded.
+    # On prépare les filtres à partir des réglages fournis ou du fichier de configuration.
     def __init__(self, config=None):
         config = config if config is not None else load_config(GUARDRAILS_CONFIG)
-        ## @brief False to let everything through (comparisons, debugging).
+        # Cette option permet de désactiver les filtres pour les comparaisons et le débogage.
         self.enabled = config.get("enabled", True)
-        ## @brief Maximum length of an incoming message.
+        # Cette valeur limite la longueur des messages reçus.
         self.max_input_chars = config.get("max_input_chars", 500)
-        ## @brief Answer to a message that is too long.
+        # Ce texte est renvoyé lorsqu’un message est trop long.
         self.too_long_message = config.get("too_long_message", "message trop long.")
 
         injection = config.get("injection") or {}
-        ## @brief Rules as (category, message, compiled patterns, keywords).
+        # Ces règles associent une catégorie, un message et des motifs à détecter.
         self.rules = [(
             "injection",
             injection.get("message", "je ne peux pas changer mes consignes."),
@@ -147,18 +116,15 @@ class Guardrails:
             ))
 
         pii = config.get("pii") or {}
-        ## @brief Kinds of personal data to mask.
+        # Cette liste indique les données personnelles à masquer.
         self.pii_kinds = [kind for kind in PII_ORDER if pii.get(kind, True)]
-        ## @brief Replacement text, "{kind}" is the kind of data.
+        # Ce texte remplace la donnée détectée en indiquant sa catégorie.
         self.pii_replacement = pii.get("replacement", "[{kind} masqué]")
 
-        ## @brief Banned words, normalized: matched as whole words, accents ignored.
+        # Ces mots sont comparés sans tenir compte des accents et doivent correspondre à des mots entiers.
         self.banned = {normalize(w) for w in config.get("banned_words") or []}
 
-    ## @brief Mask the personal data of a text.
-    #
-    # @param text Text to clean.
-    # @return A (cleaned text, kinds of data found) pair.
+    # Cette fonction masque les données personnelles détectées et indique leurs catégories.
     def redact_pii(self, text):
         found = []
         for kind in self.pii_kinds:
@@ -171,10 +137,7 @@ class Guardrails:
             text = PII_PATTERNS[kind].sub(replace, text)
         return text, sorted(set(found), key=PII_ORDER.index)
 
-    ## @brief Find the first rule a message breaks.
-    #
-    # @param text Raw message.
-    # @return A (category, message) pair, or None if no rule matches.
+    # Cette fonction cherche la première règle enfreinte par le message.
     def find_violation(self, text):
         normalized = normalize(text)
         squeezed = compact(normalized)
@@ -185,10 +148,7 @@ class Guardrails:
                 return category, message
         return None
 
-    ## @brief Check a message before it reaches the model.
-    #
-    # @param text Message typed by a user or a viewer.
-    # @return A Verdict; when allowed, its text has personal data masked.
+    # Cette fonction contrôle le message avant le modèle et masque les données personnelles lorsqu’il est accepté.
     def check_input(self, text):
         if not self.enabled:
             return Verdict(True, text)
@@ -207,13 +167,7 @@ class Guardrails:
         cleaned, found = self.redact_pii(text)
         return Verdict(True, cleaned, redacted=found)
 
-    ## @brief Clean an answer before it is shown or posted.
-    #
-    # Nothing is refused here: the answer is repaired (personal data and
-    # banned words masked), since the viewer is waiting for a reply.
-    #
-    # @param text Answer of the model.
-    # @return A Verdict, always allowed, with the cleaned text.
+    # Cette fonction nettoie la réponse avant son affichage, en masquant les données personnelles et les mots interdits.
     def check_output(self, text):
         if not self.enabled or not text:
             return Verdict(True, text or "")
@@ -232,12 +186,7 @@ class Guardrails:
         return Verdict(True, cleaned, redacted=found)
 
 
-## @brief Load the guardrails from config/guardrails.yaml.
-#
-# A missing file disables them instead of stopping the program: the
-# assistant keeps working, and the startup message says so.
-#
-# @return A Guardrails instance.
+# Cette fonction charge les filtres. Si le fichier manque, le programme continue sans eux et le signale.
 def load_guardrails():
     try:
         return Guardrails()

@@ -1,6 +1,6 @@
-# Optional local live audio: pip install -r requirements-audio.txt
+# Pour installer l’écoute locale du live : pip install -r requirements-audio.txt
 streamlink>=8,<9
 faster-whisper>=1.2,<2
 imageio-ffmpeg>=0.6,<1
-# faster-whisper 1.2 uses av.open(metadata_errors=...), removed in PyAV 19.
+# Cette version de PyAV conserve le paramètre metadata_errors utilisé par faster-whisper 1.2.
 av>=11,<17

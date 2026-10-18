@@ -1,4 +1,4 @@
-"""Local dashboard boundaries; no Twitch or model network calls."""
+"""Ces tests vérifient le dashboard local sans appeler Twitch ni le modèle."""
 import json
 from unittest.mock import Mock, patch
 

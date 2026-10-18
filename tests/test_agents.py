@@ -1,5 +1,4 @@
-## @file test_agents.py
-# @brief Tests of the multi-agent orchestration (A2) of the chat agent.
+# Ces tests vérifient la coordination des agents utilisés par le bot du chat.
 
 import unittest
 

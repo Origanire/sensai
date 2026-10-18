@@ -1,13 +1,4 @@
-## @file server.py
-# @brief Sensai's own MCP server: exposes the stream's data as tools.
-#
-# Any MCP client (Sensai's CLI, Claude Desktop, an IDE...) can start it
-# with "python -m src.mcp.server" and use the tools below: viewer memory,
-# the channel's knowledge base (RAG) and the living stream report.
-#
-# Transport: JSON-RPC 2.0 over stdio, one message per line. stdout is
-# reserved for the protocol: everything the project's modules print goes
-# to stderr instead, otherwise it would corrupt the messages.
+# Ce module expose la mémoire, les documents et les rapports de Sensai sous forme d’outils MCP.
 
 import json
 import sys
@@ -25,16 +16,13 @@ from src.core.search import load_rag_settings, search
 from src.core.storage import DOCUMENTS, init_db
 from src.tools.report import init_report, render_report, update_report_from_event
 
-## @brief MCP protocol version implemented by the server.
+# Cette valeur indique la version du protocole MCP utilisée par le serveur.
 PROTOCOL_VERSION = "2025-06-18"
-## @brief JSON-RPC error codes.
+# Ces codes identifient les erreurs JSON-RPC.
 METHOD_NOT_FOUND = -32601
 INVALID_PARAMS = -32602
 
-## @brief Tools exposed by the server, in the MCP format.
-#
-# readOnlyHint tells clients which tools change nothing: Sensai's CLI asks
-# for a confirmation before running any tool without it.
+# Ces définitions décrivent les outils MCP et indiquent ceux qui ne modifient pas les données.
 TOOLS = [
     {
         "name": "get_viewer_profile",
@@ -91,26 +79,21 @@ TOOLS = [
 ]
 
 
-## @brief Implementation of the tools, sharing one database and one client.
+# Cette classe exécute les outils avec une base et un client partagés.
 class SensaiTools:
-    ## @brief Open the database and the Ollama client.
+    # On ouvre la base et le client Ollama nécessaires aux outils.
     def __init__(self):
         config = load_config()
-        ## @brief Ollama client (embeddings, report edits).
+        # Ce client prépare les vecteurs et les modifications du rapport.
         self.client = OllamaClient(config)
-        ## @brief RAG settings.
+        # Ces réglages servent à la recherche documentaire.
         self.rag = load_rag_settings(config)
-        ## @brief Viewer memory.
+        # Cette connexion donne accès à la mémoire des viewers.
         self.memory = init_memory()
-        ## @brief Chunks of the knowledge base.
+        # Cette connexion donne accès aux passages des documents.
         self.chunks = init_db()
 
-    ## @brief Run a tool.
-    #
-    # @param name Name of the tool.
-    # @param arguments Arguments of the call.
-    # @return Text result.
-    # @exception ValueError On unknown tool or missing argument.
+    # Cette méthode choisit l’outil demandé et vérifie ses arguments avant de l’exécuter.
     def call(self, name, arguments):
         match name:
             case "get_viewer_profile":
@@ -130,10 +113,7 @@ class SensaiTools:
             case _:
                 raise ValueError(f"outil inconnu : {name}")
 
-    ## @brief Describe a viewer.
-    #
-    # @param login Twitch login, with or without "@".
-    # @return Text profile.
+    # Cette méthode retrouve et décrit le profil d’un viewer à partir de son pseudo.
     def viewer_profile(self, login):
         login = login.lstrip("@")
         viewer_id = find_viewer_id(self.memory, login)
@@ -149,11 +129,7 @@ class SensaiTools:
         lines.append("Résumé des échanges : " + (summary or "aucun"))
         return "\n".join(lines)
 
-    ## @brief Store a fact about a viewer.
-    #
-    # @param login Twitch login, with or without "@".
-    # @param fact Fact to remember.
-    # @return Confirmation text.
+    # Cette méthode enregistre un fait sur le viewer demandé.
     def remember(self, login, fact):
         login = login.lstrip("@")
         viewer_id = find_viewer_id(self.memory, login)
@@ -162,13 +138,7 @@ class SensaiTools:
         save_fact(self.memory, viewer_id, fact.strip())
         return f"Fait enregistré pour {login} : {fact.strip()}"
 
-    ## @brief Retrieve the relevant passages of the knowledge base.
-    #
-    # The passages are returned, not an answer: the calling model writes
-    # the answer itself, with the passages in its context.
-    #
-    # @param question Question in natural language.
-    # @return Numbered passages with their source and score.
+    # Cette méthode renvoie les passages pertinents de la base pour que le modèle puisse construire sa réponse.
     def search_docs(self, question):
         results = search(question, self.client, self.chunks, self.rag["top_k"],
                          DOCUMENTS, self.rag["min_score"])
@@ -180,21 +150,13 @@ class SensaiTools:
         )
 
 
-## @brief Write one JSON-RPC message on the protocol stream.
-#
-# @param out Real stdout of the process.
-# @param message Message to send.
+# Cette fonction écrit un message JSON-RPC sur la sortie réservée au protocole.
 def send(out, message):
     out.write(json.dumps(message, ensure_ascii=False) + "\n")
     out.flush()
 
 
-## @brief Answer one JSON-RPC request.
-#
-# @param tools SensaiTools instance, created on the first tool call.
-# @param message Request received.
-# @return The "result" of the answer.
-# @exception LookupError For an unknown method.
+# Cette fonction traite une requête JSON-RPC et renvoie son résultat.
 def handle(tools, message):
     method = message.get("method")
     params = message.get("params") or {}
@@ -214,13 +176,13 @@ def handle(tools, message):
                 text = tools().call(params.get("name"), params.get("arguments") or {})
                 return {"content": [{"type": "text", "text": text}], "isError": False}
             except (KeyError, ValueError) as error:
-                # A tool error is a result the model can read and correct
+                # Une erreur d’outil est renvoyée au modèle pour qu’il puisse la comprendre et corriger sa demande.
                 return {"content": [{"type": "text", "text": f"Erreur : {error}"}], "isError": True}
         case _:
             raise LookupError(method)
 
 
-## @brief Serve requests read on stdin until it is closed.
+# Cette fonction traite les requêtes reçues sur l’entrée standard jusqu’à sa fermeture.
 def main():
     out = sys.stdout
     sys.stdout = sys.stderr
@@ -241,7 +203,7 @@ def main():
         except json.JSONDecodeError:
             continue
         if "id" not in message:
-            continue  # notification (notifications/initialized...)
+            continue  # Cette notification n’attend pas de réponse.
 
         try:
             send(out, {"jsonrpc": "2.0", "id": message["id"], "result": handle(tools, message)})

@@ -1,6 +1,4 @@
-## @file test_mcp.py
-# @brief Tests of tool calling (T1): MCP client against Sensai's own MCP
-# server, and the tool loop with a scripted model.
+# Ces tests vérifient le client MCP, le serveur Sensai et les appels d’outils avec un modèle simulé.
 
 import unittest
 
@@ -10,7 +8,7 @@ from tests.fakes import FakeClient
 
 
 class FakeRegistry:
-    """Two tools: one read-only, one that writes."""
+    """On prépare un outil en lecture seule et un autre qui modifie des données."""
 
     max_steps = 3
 

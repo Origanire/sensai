@@ -1,12 +1,4 @@
-## @file eval_rag.py
-# @brief Measure retrieval quality per embedding model (needs Ollama).
-#
-# Usage: python -m tests.eval_rag [model ...]
-#   e.g. python -m tests.eval_rag bge-m3 nomic-embed-text
-# For each model, the knowledge folder is ingested into a throw-away
-# in-memory database, then each question is searched:
-# - on-topic questions: is the best passage from the expected section?
-# - off-topic questions: is the best score under rag.min_score?
+# Ce script compare la recherche documentaire entre plusieurs modèles de vecteurs. Il nécessite Ollama et s’utilise avec python -m tests.eval_rag.
 
 import sys
 import time
@@ -16,7 +8,7 @@ from src.core.ollama_client import OllamaClient, load_config
 from src.core.search import load_rag_settings, search
 from src.core.storage import init_db, save_chunks
 
-## @brief On-topic questions and the section that answers them.
+# Ces questions correspondent à des sections présentes dans la base.
 ON_TOPIC = [
     ("c'est quoi ta carte graphique ?", "Setup PC"),
     ("quand est le prochain stream ?", "Planning"),
@@ -26,7 +18,7 @@ ON_TOPIC = [
     ("tu joues à quoi en ce moment ?", "Jeu en cours"),
     ("c'est quoi ton micro ?", "Setup PC"),
 ]
-## @brief Questions the knowledge base cannot answer.
+# Ces questions ne peuvent pas être résolues avec les documents disponibles.
 OFF_TOPIC = [
     "qui a gagné la coupe du monde 2022 ?",
     "recette de la pâte à crêpes",
@@ -35,10 +27,7 @@ OFF_TOPIC = [
 ]
 
 
-## @brief Evaluate one embedding model.
-#
-# @param model Name of the Ollama embedding model.
-# @param settings RAG settings (folder, chunking, min_score).
+# Cette fonction mesure la qualité de recherche d’un modèle avec les réglages fournis.
 def evaluate(model, settings):
     client = OllamaClient()
     client.embedding_model = model

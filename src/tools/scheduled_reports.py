@@ -1,9 +1,4 @@
-## @file scheduled_reports.py
-# @brief Internet agent: scheduled web research reports on user-defined topics.
-#
-# At a regular interval, each topic is searched on the web, then the model
-# writes a short synthesis of the results, saved as a Markdown file. The
-# loop runs in a daemon thread so the CLI stays usable meanwhile.
+# Ce module recherche régulièrement des sujets sur Internet et enregistre les résumés en Markdown, sans bloquer le terminal.
 
 import os
 import re
@@ -18,18 +13,18 @@ from src.tools.web_search import (
     generate_search_query,
 )
 
-## @brief Settings used when config.yaml has no "scheduled_reports" section.
+# Ces valeurs sont utilisées quand les réglages de veille sont absents.
 DEFAULT_SETTINGS = {
     "topics": [],
     "interval_minutes": 60,
     "folder": "reports/",
 }
 
-## @brief Flag shared with the loop: set to ask it to stop.
+# Ce signal demande à la boucle de veille de s’arrêter.
 _stop_event = threading.Event()
-## @brief Thread running the loop, or None if never started.
+# Cette variable contient la tâche de veille, ou None si elle n’a pas été lancée.
 _thread = None
-## @brief State of the loop, read by reports_status().
+# Cet état permet d’afficher ce que fait la veille.
 _state = {
     "topics": [],
     "interval_minutes": None,
@@ -40,39 +35,24 @@ _state = {
 }
 
 
-## @brief Raised when a report cannot be produced (no results, model down).
+# Cette erreur indique qu’un rapport n’a pas pu être produit.
 class ReportError(Exception):
     pass
 
 
-## @brief Ollama client wrapper whose chat() never prints anything.
-#
-# generate_search_query() calls client.chat(), which streams tokens to
-# stdout: from a background thread, they would land in the middle of what
-# the user is typing. This wrapper routes the call to chat_silent().
+# Cette classe appelle le modèle sans afficher sa réponse, pour ne pas perturber la saisie dans le terminal.
 class _SilentClient:
-    ## @brief Wrap a client.
-    #
-    # @param client OllamaClient to wrap.
+    # On conserve le client Ollama à utiliser.
     def __init__(self, client):
-        ## @brief Wrapped OllamaClient.
+        # Ce client permet d’appeler Ollama.
         self.client = client
 
-    ## @brief Same contract as OllamaClient.chat(), without printing.
-    #
-    # @param messages Conversation (list of "role"/"content" dicts).
-    # @return The model's response, or None on error.
+    # Cette méthode renvoie la réponse du modèle sans l’afficher.
     def chat(self, messages):
         return self.client.chat_silent(messages)
 
 
-## @brief Read the "scheduled_reports" section of the configuration.
-#
-# Missing keys (or a missing section) fall back to DEFAULT_SETTINGS, so an
-# older config.yaml keeps working.
-#
-# @param config Configuration dictionary loaded from config.yaml.
-# @return Dict with "topics", "interval_minutes" and "folder".
+# Cette fonction charge les réglages de veille et complète les valeurs manquantes.
 def load_settings(config):
     section = (config or {}).get("scheduled_reports") or {}
     settings = dict(DEFAULT_SETTINGS)
@@ -81,27 +61,14 @@ def load_settings(config):
     return settings
 
 
-## @brief Turn a topic into a string usable in a file name.
-#
-# @param topic Topic, e.g. "Patch Elden Ring 1.12".
-# @return Slug, e.g. "patch-elden-ring-1-12".
+# Cette fonction transforme un sujet en nom utilisable dans un fichier.
 def slugify(topic):
     ascii_text = unicodedata.normalize("NFKD", topic).encode("ascii", "ignore").decode()
     slug = re.sub(r"[^a-z0-9]+", "-", ascii_text.lower()).strip("-")
     return slug[:50].strip("-") or "topic"
 
 
-## @brief Search the web on a topic and have the model synthesize it.
-#
-# The title, date and sources are written by the code, not the model: a
-# 3B model regularly invents dates or URLs. The model only writes the key
-# points, each one pointing to a numbered search result.
-#
-# @param topic Topic to research.
-# @param client OllamaClient.
-# @param max_results Number of web results given to the model.
-# @return The report, as Markdown text.
-# @exception ReportError If the search returns nothing or the model fails.
+# Cette fonction recherche un sujet et demande une synthèse au modèle. Le code ajoute lui-même la date et les sources.
 def generate_report(topic, client, max_results=5):
     silent = _SilentClient(client)
 
@@ -132,7 +99,7 @@ Règles :
     if not answer or not answer.strip():
         raise ReportError("Ollama n'a pas répondu (est-il lancé ?)")
 
-    # The model does not always respect the count: keep the bullets, at most 5
+    # On garde au maximum cinq puces, même si le modèle en écrit davantage.
     bullets = [line.strip().lstrip("-*• ").strip() for line in answer.splitlines()
                if line.strip().startswith(("-", "*", "•"))]
     if not bullets:
@@ -152,15 +119,7 @@ Règles :
     )
 
 
-## @brief Write a report to a timestamped Markdown file.
-#
-# Two reports of the same topic within the same minute (very short
-# interval) get a numeric suffix instead of overwriting each other.
-#
-# @param topic Topic of the report.
-# @param report_text Markdown text of the report.
-# @param folder Destination directory, created if needed.
-# @return Path of the written file.
+# Cette fonction sauvegarde le rapport avec une date dans son nom, sans écraser un rapport existant.
 def save_report(topic, report_text, folder="reports/"):
     os.makedirs(folder, exist_ok=True)
 
@@ -176,17 +135,7 @@ def save_report(topic, report_text, folder="reports/"):
     return path
 
 
-## @brief Generate and save a report for each topic, every interval.
-#
-# Blocking loop, meant to run in a thread (see start_scheduled_reports).
-# A failure on a topic (no network, Ollama down, disk error) is logged and
-# the topic is skipped: the next attempt happens at the next interval.
-# The first cycle starts immediately.
-#
-# @param topics List of topics to research.
-# @param client OllamaClient.
-# @param interval_minutes Time between the start of two cycles, in minutes.
-# @param folder Directory where the reports are saved.
+# Cette boucle produit les rapports à intervalles réguliers. Une erreur sur un sujet n’empêche pas de traiter les suivants.
 def run_scheduled_reports(topics, client, interval_minutes, folder="reports/"):
     interval = timedelta(minutes=interval_minutes)
     _state.update(topics=list(topics), interval_minutes=interval_minutes,
@@ -216,15 +165,7 @@ def run_scheduled_reports(topics, client, interval_minutes, folder="reports/"):
     _state["current_topic"] = None
 
 
-## @brief Launch run_scheduled_reports() in a daemon thread.
-#
-# The thread gets its own OllamaClient so it never shares per-call state
-# (token counters) with the chat.
-#
-# @param topics List of topics to research.
-# @param interval_minutes Time between two cycles, in minutes.
-# @param folder Directory where the reports are saved.
-# @return False if a loop is already running, True otherwise.
+# Cette fonction lance la veille en arrière-plan avec son propre client Ollama.
 def start_scheduled_reports(topics, interval_minutes, folder="reports/"):
     global _thread
     if is_running():
@@ -241,14 +182,7 @@ def start_scheduled_reports(topics, interval_minutes, folder="reports/"):
     return True
 
 
-## @brief Ask the loop to stop and wait briefly for it.
-#
-# The thread is never killed: it notices the flag between two topics, or
-# right away if it is waiting for the next cycle. A report being written
-# is finished first, which can take up to the Ollama timeout.
-#
-# @param timeout Maximum wait, in seconds.
-# @return True if the loop has stopped, False if it is still finishing.
+# Cette fonction demande l’arrêt de la veille et attend brièvement. Le rapport en cours peut se terminer avant l’arrêt.
 def stop_scheduled_reports(timeout=2):
     _stop_event.set()
     if _thread is not None:
@@ -256,16 +190,12 @@ def stop_scheduled_reports(timeout=2):
     return not is_running()
 
 
-## @brief Tell whether the loop is running.
-#
-# @return True if the thread is alive.
+# Cette fonction vérifie si la veille fonctionne encore.
 def is_running():
     return _thread is not None and _thread.is_alive()
 
 
-## @brief Describe the state of the loop, for display.
-#
-# @return Human-readable status text.
+# Cette fonction prépare un texte lisible décrivant l’état de la veille.
 def reports_status():
     if not is_running():
         return "Rapports automatiques : inactifs."

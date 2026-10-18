@@ -1,4 +1,4 @@
-"""Local dashboard: python -m src.dashboard (macOS/Linux, loopback only)."""
+"""Ce module lance le dashboard local avec python -m src.dashboard."""
 
 import argparse
 import atexit
@@ -43,7 +43,7 @@ class DashboardError(Exception):
 
 
 class BotController:
-    """Own exactly one child. No user-supplied commands or PID-based killing."""
+    """Cette classe pilote un seul processus du bot, sans exécuter de commande fournie par l’utilisateur."""
 
     def __init__(self, root=ROOT):
         self.root = Path(root)
@@ -335,7 +335,7 @@ class BotController:
                 return {"reply": verdict.message, "seconds": 0, "blocked": True}
             client = OllamaClient(self.model_config())
             started = time.monotonic()
-            # Strip only the configured mention, as the Twitch caller does.
+            # On retire seulement la mention du bot configurée pour cette chaîne.
             from src.agents.chat_agent import match_trigger
             addressed = match_trigger(verdict.text, settings["trigger"])
             query = addressed if addressed is not None else verdict.text

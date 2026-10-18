@@ -1,4 +1,4 @@
-"""Authentication checks use fake tokens and never contact Twitch."""
+"""Ces tests vérifient l’authentification avec de faux jetons, sans contacter Twitch."""
 
 from pathlib import Path
 import tempfile

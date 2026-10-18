@@ -1,6 +1,4 @@
-## @file strategy.py
-# @brief Strategic recommendations based on stream history: report
-# archiving, RAG ingestion and advice generation.
+# Ce module archive les rapports de live et les utilise pour proposer des conseils au streamer.
 
 import json
 import os
@@ -13,15 +11,11 @@ from src.core.search import search
 from src.tools.report import render_report
 
 
-## @brief Query used to retrieve the useful passages of the history.
+# Cette question sert à retrouver les passages utiles dans les anciens rapports.
 STRATEGY_QUERY = "stratégie performance stream catégories viewers moments forts"
 
 
-## @brief Archive the current stream's report under a timestamped name.
-#
-# @param current_path Path of the report of the ongoing stream.
-# @param archive_dir Directory where past reports are archived.
-# @return Path of the archived file, or None if no report existed.
+# Cette fonction archive le rapport actuel avec un nom daté, s’il existe.
 def archive_current_report(current_path="stream_report.json", archive_dir="reports"):
     os.makedirs(archive_dir, exist_ok=True)
 
@@ -34,15 +28,7 @@ def archive_current_report(current_path="stream_report.json", archive_dir="repor
     return archive_path
 
 
-## @brief Ingest every archived report into the vector database.
-#
-# Each report is rendered to Markdown, split into chunks, embedded,
-# then saved with the file name as the source.
-#
-# @param client Ollama client used for the embeddings.
-# @param conn SQLite connection where to store the chunks.
-# @param archive_dir Directory holding the archived reports.
-# @return Dict {filename: number_of_chunks}.
+# Cette fonction découpe et indexe les rapports archivés en conservant leur fichier comme source.
 def ingest_past_reports(client, conn, archive_dir="reports"):
     results = {}
 
@@ -68,7 +54,7 @@ def ingest_past_reports(client, conn, archive_dir="reports"):
             print(f"[Erreur] Impossible de lire {filename} : {e}")
             continue
 
-        # The Markdown rendering keeps the section titles, useful to the model
+        # Le format Markdown garde les titres des sections pour aider le modèle à comprendre les passages.
         text = render_report(report)
         chunks = chunk_text(text, chunk_size=500, overlap=50)
         embedded = embed_chunks(chunks, client)
@@ -80,15 +66,7 @@ def ingest_past_reports(client, conn, archive_dir="reports"):
     return results
 
 
-## @brief Generate strategic recommendations from past streams.
-#
-# Retrieves the most relevant passages of the history, then asks the
-# model for recommendations based only on that context.
-#
-# @param client Ollama client (query embedding + chat).
-# @param conn SQLite connection holding the chunks of past streams.
-# @param top_k Number of chunks injected into the context.
-# @return The model's recommendations, or a message if the history is empty.
+# Cette fonction retrouve les passages utiles des anciens lives et demande des conseils fondés sur ce contexte.
 def generate_strategy_recommendations(client, conn, top_k=5):
     results = search(STRATEGY_QUERY, client, conn, top_k=top_k, collection=STREAMS)
 
@@ -96,7 +74,7 @@ def generate_strategy_recommendations(client, conn, top_k=5):
         return ("Aucun historique de stream disponible. Termine d'abord au moins un "
                 "stream avec /stream end.")
 
-    # Each excerpt is preceded by its source file to tell the streams apart
+    # On ajoute le nom du fichier devant chaque extrait pour distinguer les lives.
     context = "\n\n".join(
         f"[Source : {chunk['source']}]\n{chunk['text']}" for score, chunk in results
     )
@@ -122,17 +100,7 @@ Règles :
     return client.chat(messages)
 
 
-## @brief Close the current stream: archive its report and index it.
-#
-# The archived report joins the "streams" collection, where the strategy
-# advice looks for it; the current report is then reset for the next
-# stream. Nothing happens if no report was started.
-#
-# @param client Ollama client used for the embeddings.
-# @param conn SQLite connection where to store the chunks.
-# @param current_path Path of the report of the ongoing stream.
-# @param archive_dir Directory where past reports are archived.
-# @return Path of the archived report, or None if there was none.
+# Cette fonction archive et indexe le rapport du live terminé, puis prépare le prochain rapport.
 def end_stream(client, conn, current_path="stream_report.json", archive_dir="reports"):
     archive_path = archive_current_report(current_path, archive_dir)
     if archive_path is None:

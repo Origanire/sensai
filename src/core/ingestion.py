@@ -1,47 +1,30 @@
-## @file ingestion.py
-# @brief Document ingestion pipeline: multi-format loading, chunking with
-# overlap and embedding generation.
+# Ce module lit les documents, les découpe en passages et calcule leurs représentations numériques pour la recherche.
 
 import os
 from pypdf import PdfReader
 from docx import Document
 
-## @brief Task prefixes expected by nomic-embed-text: documents and queries
-# are embedded differently, which noticeably improves retrieval.
+# Ces préfixes aident nomic-embed-text à distinguer les documents des questions.
 DOCUMENT_PREFIX = "search_document: "
-## @brief Prefix of the search queries, see DOCUMENT_PREFIX.
+# Ce préfixe indique une question au modèle de recherche.
 QUERY_PREFIX = "search_query: "
-## @brief Add the nomic task prefix when the embedding model expects one.
-#
-# Other models (bge-m3, paraphrase-multilingual) were not trained with
-# these prefixes: for them the text is embedded as-is.
-#
-# @param client Ollama client, whose embedding_model is checked.
-# @param prefix DOCUMENT_PREFIX or QUERY_PREFIX.
-# @param text Text to embed.
-# @return The text to send to the embedding model.
+# Cette fonction ajoute un préfixe seulement si le modèle utilisé en a besoin.
 def with_prefix(client, prefix, text):
     if "nomic" in getattr(client, "embedding_model", ""):
         return prefix + text
     return text
 
 
-## @brief Extensions accepted by the ingestion pipeline.
+# Ces extensions correspondent aux formats de documents acceptés.
 SUPPORTED_EXTENSIONS = (".txt", ".md", ".pdf", ".docx")
 
-## @brief Load the contents of a plain text file (.txt).
-#
-# @param path Path of the file.
-# @return Contents of the file, decoded as UTF-8.
+# Cette fonction lit un fichier texte en UTF-8.
 def load_txt(path):
     with open(path, "r", encoding="utf-8") as f:
         return f.read()
 
 
-## @brief Extract the text of a PDF file, page by page.
-#
-# @param path Path of the PDF file.
-# @return Text extracted from all the pages.
+# Cette fonction extrait le texte d’un PDF, page par page.
 def load_pdf(path):
     reader = PdfReader(path)
     text = ""
@@ -52,20 +35,13 @@ def load_pdf(path):
     return text
 
 
-## @brief Extract the text of a Word document (.docx).
-#
-# @param path Path of the DOCX file.
-# @return Text of the document's paragraphs.
+# Cette fonction récupère les paragraphes d’un document Word.
 def load_docx(path):
     doc = Document(path)
     return "\n".join(p.text for p in doc.paragraphs)
 
 
-## @brief Load a document based on its extension (.txt, .md, .pdf, .docx).
-#
-# @param path Path of the file.
-# @return Full text of the document.
-# @exception ValueError If the format is not supported.
+# Cette fonction choisit le lecteur adapté au format du document et refuse les formats inconnus.
 def load_document(path):
     ext = os.path.splitext(path)[1].lower()
 
@@ -79,19 +55,14 @@ def load_document(path):
         raise ValueError(f"Format non supporté : {ext} (fichier : {path})")
 
 
-## @brief Split a text into chunks with overlap.
-#
-# @param text Text to split.
-# @param chunk_size Size of a chunk, in characters.
-# @param overlap Number of characters carried over from the previous chunk.
-# @return List of chunks.
+# Cette fonction découpe le texte en passages qui se recouvrent pour conserver le contexte.
 def chunk_text(text, chunk_size=500, overlap=50):
     chunks = []
     start = 0
 
     while start < len(text):
         end = min(start + chunk_size, len(text))
-        # Cut on a space rather than in the middle of a word
+        # On coupe sur un espace pour ne pas casser un mot.
         if end < len(text):
             space = text.rfind(" ", start + chunk_size // 2, end)
             if space != -1:
@@ -101,25 +72,14 @@ def chunk_text(text, chunk_size=500, overlap=50):
             chunks.append(chunk)
         if end >= len(text):
             break
-        # The overlap starts on a word too: move to the next space
+        # Le recouvrement commence aussi au début d’un mot.
         next_start = max(end - overlap, start + 1)
         space = text.find(" ", next_start, end)
         start = space + 1 if space != -1 and text[next_start - 1] != " " else next_start
 
     return chunks
 
-## @brief Split a Markdown document along its headings.
-#
-# A fixed-size chunk often straddles two sections ("setup PC" and "rules"):
-# its embedding then matches neither question well. Here each chunk is one
-# section, prefixed with its heading path ("FAQ > Setup PC") so that even a
-# short section carries its topic. A section longer than chunk_size is
-# split again with chunk_text().
-#
-# @param text Markdown text.
-# @param chunk_size Maximum size of a chunk, in characters.
-# @param overlap Overlap used when a section has to be split.
-# @return List of chunks.
+# Cette fonction découpe le Markdown par section et conserve les titres pour faciliter la recherche.
 def chunk_markdown(text, chunk_size=500, overlap=50):
     chunks = []
     titles = []
@@ -146,13 +106,7 @@ def chunk_markdown(text, chunk_size=500, overlap=50):
     return chunks
 
 
-## @brief Generate the embedding of each chunk via Ollama.
-#
-# Chunks whose embedding fails are silently skipped.
-#
-# @param chunks List of chunks (raw text).
-# @param client Ollama client used for the embeddings.
-# @return List of {"text", "embedding"} dicts.
+# Cette fonction calcule la représentation numérique de chaque passage avec Ollama et ignore les passages en échec.
 def embed_chunks(chunks, client):
     embedded = []
 
@@ -167,13 +121,7 @@ def embed_chunks(chunks, client):
     return embedded
 
 
-## @brief Full ingestion pipeline for one file: loading, chunking, embeddings.
-#
-# @param path Path of the file to ingest.
-# @param client Ollama client used for the embeddings.
-# @param chunk_size Size of a chunk, in characters.
-# @param overlap Overlap between consecutive chunks.
-# @return List of embedded chunks.
+# Cette fonction prépare un document pour la recherche : lecture, découpage et calcul des vecteurs.
 def ingest_file(path, client, chunk_size=500, overlap=50):
     text = load_document(path)
     if path.lower().endswith(".md"):
@@ -183,16 +131,7 @@ def ingest_file(path, client, chunk_size=500, overlap=50):
     return embed_chunks(chunks, client)
 
 
-## @brief Ingest every supported document of a folder.
-#
-# Files in unsupported formats are skipped; the failure of one file does
-# not interrupt the ingestion of the others.
-#
-# @param folder_path Path of the folder to ingest.
-# @param client Ollama client used for the embeddings.
-# @param chunk_size Size of a chunk, in characters.
-# @param overlap Overlap between consecutive chunks.
-# @return Dict {filename: embedded_chunks}.
+# Cette fonction prépare tous les documents compatibles d’un dossier, sans bloquer les autres si un fichier échoue.
 def ingest_folder(folder_path, client, chunk_size=500, overlap=50):
     results = {}
 

@@ -1,9 +1,4 @@
-## @file cli.py
-# @brief Sensai CLI chatbot: interactive conversation loop with Ollama.
-#
-# The streamer's own assistant: chat with the model (which may call MCP
-# tools), plus slash commands for the knowledge base, the stream report,
-# exports and scheduled reports. See /help.
+# Ce module permet de discuter avec Sensai depuis le terminal et d’utiliser ses commandes et ses outils.
 
 import argparse
 import os
@@ -18,9 +13,7 @@ from src.mcp.tools import chat_with_tools, load_registry
 from src.tools.scheduled_reports import stop_scheduled_reports
 
 
-## @brief Read the command-line options.
-#
-# @return Parsed arguments: config, model, no_tools.
+# Cette fonction lit les options données au lancement du programme.
 def parse_args():
     parser = argparse.ArgumentParser(description="Sensai, assistant IA local (Ollama).")
     parser.add_argument("--config", help="fichier de configuration (défaut : config.yaml)")
@@ -30,16 +23,10 @@ def parse_args():
     return parser.parse_args()
 
 
-## @brief Entry point of the Sensai CLI chatbot.
-#
-# Interactive read loop: reads user input, sends the full conversation
-# history to the model via Ollama and streams the response. The history
-# is kept in memory for the whole session; slash commands are handled
-# locally and never sent to the model.
+# Cette fonction lance la conversation dans le terminal. Elle conserve les échanges et traite les commandes localement.
 def main():
     args = parse_args()
-    # Set for the whole process, so the modules (and the MCP servers, which
-    # inherit the environment) read the same file and model
+    # On partage ces réglages avec les autres modules et les serveurs MCP grâce aux variables d’environnement.
     if args.config:
         os.environ[CONFIG_ENV] = args.config
     if args.model:
@@ -87,7 +74,7 @@ def main():
                 print("À bientôt !")
                 break
 
-            # Slash commands are answered locally, never sent to the model
+            # Les commandes sont traitées ici, sans être envoyées au modèle.
             if user_input.startswith("/"):
                 output = commands(user_input, messages, ctx)
                 if output:
@@ -112,7 +99,7 @@ def main():
                 response = client.chat(messages)
 
             if response is None:
-                # Drop the question and any tool exchange left unanswered
+                # On abandonne la question et les appels d’outils restés sans réponse.
                 del messages[history_size - 1:]
                 print("[Info] Réessaie ou vérifie qu'Ollama est lancé.\n")
                 continue
@@ -124,7 +111,7 @@ def main():
             messages.append({"role": "assistant", "content": cleaned.text})
             print()
     finally:
-        # Lets a report being written finish instead of cutting the file
+        # On laisse le rapport en cours se terminer pour ne pas couper son fichier.
         stop_scheduled_reports()
         if registry is not None:
             registry.close()

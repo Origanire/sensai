@@ -1,5 +1,4 @@
-## @file commands.py
-# @brief Handling of slash commands typed in the CLI.
+# Ce module traite les commandes saisies dans le terminal.
 
 from src.core.export import (
     conversation_sections,
@@ -20,10 +19,10 @@ from src.tools.scheduled_reports import (
 )
 from src.tools.strategy import end_stream, generate_strategy_recommendations
 
-## @brief Usage of the /reports command.
+# Ce texte explique comment utiliser la commande /reports.
 REPORTS_HELP = "Usage : /reports start | stop | status"
 
-## @brief Help of the CLI, shown by /help.
+# Cette aide s’affiche avec la commande /help.
 HELP = """Commandes :
   /help                     cette aide
   /ingest [dossier]         indexe les documents (txt, md, pdf, docx) pour le RAG
@@ -40,12 +39,7 @@ HELP = """Commandes :
   exit                      quitter"""
 
 
-## @brief Title, sections and raw data of the document to export.
-#
-# @param target "report" for the stream report, anything else for the
-#               conversation.
-# @param messages Conversation history.
-# @return A (title, sections, file stem, raw data) tuple.
+# Cette fonction prépare le titre, les sections et les données du document à exporter.
 def document(target, messages):
     if target == "report":
         report = init_report()
@@ -54,11 +48,7 @@ def document(target, messages):
     return "Sensai CLI Chat conversation", conversation_sections(messages), "SensaiChat", messages
 
 
-## @brief Route an export request to the requested format.
-#
-# @param argv Arguments of /export (format, then optionally "report").
-# @param messages Conversation history (list of "role"/"content" dicts).
-# @return Confirmation, help or error message to display.
+# Cette fonction choisit le format d’export demandé et renvoie une confirmation ou une erreur.
 def export(argv, messages):
     if not argv or argv[0] in ("help", "-h", "--help"):
         return export_help()
@@ -69,13 +59,7 @@ def export(argv, messages):
     return export_sections(argv[0], title, sections, stem, raw)
 
 
-## @brief Start, stop or describe the scheduled web reports.
-#
-# Topics, interval and folder are read from config.yaml at each start, so
-# a change in the config applies at the next /reports start.
-#
-# @param action "start", "stop" or "status".
-# @return Message to display.
+# Cette fonction démarre, arrête ou décrit la veille automatique. Les réglages sont relus à chaque démarrage.
 def reports(action: str) -> str:
     match action:
         case "start":
@@ -98,11 +82,7 @@ def reports(action: str) -> str:
             return REPORTS_HELP
 
 
-## @brief Index a folder of documents into the "documents" collection.
-#
-# @param folder Folder to ingest.
-# @param ctx CLI context (client, chunks database).
-# @return Summary of what was indexed.
+# Cette fonction découpe et indexe les documents d’un dossier pour les recherches du bot.
 def ingest(folder, ctx):
     try:
         results = ingest_folder(folder, ctx["client"], ctx["rag"]["chunk_size"],
@@ -115,13 +95,7 @@ def ingest(folder, ctx):
             f"{count_chunks(ctx['chunks'], DOCUMENTS)} passages au total.")
 
 
-## @brief Answer a question from the documents, then list the sources.
-#
-# The answer is streamed by rag_chat(); only the sources are returned.
-#
-# @param question Question typed after /ask.
-# @param ctx CLI context.
-# @return Sources with their similarity score.
+# Cette fonction répond à partir des documents, puis renvoie les sources et leurs scores.
 def ask(question, ctx):
     print("Sensai : ", end="", flush=True)
     answer, results = rag_chat(question, ctx["client"], ctx["chunks"], ctx["rag"]["top_k"],
@@ -133,13 +107,7 @@ def ask(question, ctx):
     return "Sources :\n" + format_sources(results)
 
 
-## @brief Handle a slash command typed by the user.
-#
-# @param user_input Raw user input (e.g. "/export md").
-# @param messages Conversation history (list of "role"/"content" dicts).
-# @param ctx CLI context: client, chunks database, RAG settings, MCP
-#            registry, share port.
-# @return Message to display in response to the command.
+# Cette fonction reconnaît la commande saisie et appelle le traitement correspondant.
 def commands(user_input, messages, ctx):
     argv = user_input.split()
     rest = user_input.partition(" ")[2].strip()

@@ -1,9 +1,4 @@
-"""Connect a dedicated Twitch bot using the official device authorization flow.
-
-Run ``python -m src.tools.twitch_auth --client-id ID --bot LOGIN``.
-Only the short user code is displayed; tokens are validated and saved to .env.
-The browser used to authorize the account can be on a different device.
-"""
+"""Ce module connecte le compte bot avec l’autorisation officielle Twitch. Il valide les jetons et les sauvegarde dans .env sans les afficher."""
 
 import argparse
 import os
@@ -21,15 +16,15 @@ SCOPES = {"chat:read", "chat:edit"}
 
 
 class AuthError(Exception):
-    """An actionable error safe to show without exposing credentials."""
+    """Cette erreur peut être affichée sans révéler les identifiants de connexion."""
 
 
 class ExpiredToken(AuthError):
-    """Only invalid/expired credentials are eligible for refresh."""
+    """Seuls les identifiants expirés ou invalides peuvent être renouvelés ici."""
 
 
 def request_json(method, endpoint, **kwargs):
-    """Never include request/response bodies or headers in error messages."""
+    """On ne place jamais le contenu des requêtes ni leurs en-têtes dans les erreurs."""
     try:
         response = requests.request(
             method, f"{OAUTH_URL}/{endpoint}", timeout=20,
@@ -44,7 +39,7 @@ def request_json(method, endpoint, **kwargs):
 
 
 def validate_token(token, client_id, bot):
-    """Reject a streamer token, a different application, or missing scopes."""
+    """On vérifie le compte bot, l’application et les autorisations demandées."""
     status, identity = request_json(
         "GET", "validate", headers={"Authorization": f"OAuth {token}"},
     )
@@ -67,11 +62,7 @@ def validate_token(token, client_id, bot):
 
 
 def save_settings(values, path=ENV_PATH):
-    """Atomically update only our keys, retaining other settings and comments.
-
-    The temporary and final files are owner-readable/writable only (0600).
-    Reject newlines and quote characters rather than producing unsafe dotenv.
-    """
+    """Cette fonction remplace uniquement nos clés dans .env. Elle protège le fichier et refuse les caractères qui pourraient casser son format."""
     path = Path(path)
     for key, value in values.items():
         if not re.fullmatch(r"[A-Z_]+", key) or not re.fullmatch(r"[a-zA-Z0-9:._~%/+=-]+", str(value)):
@@ -100,7 +91,7 @@ def save_settings(values, path=ENV_PATH):
 
 
 def refresh_authorization(client_id, bot, refresh_token, path=ENV_PATH):
-    """Renew an existing public-client grant without requesting new scopes."""
+    """Cette fonction renouvelle une autorisation existante sans demander de nouveaux droits."""
     if not refresh_token:
         raise AuthError("Reconnecte le compte Twitch depuis le dashboard.")
     status, result = request_json("POST", "token", data={
@@ -115,7 +106,7 @@ def refresh_authorization(client_id, bot, refresh_token, path=ENV_PATH):
 
 
 def authorize(client_id, bot, path=ENV_PATH, on_device=None):
-    """Wait for explicit browser authorization, validate it, then save tokens."""
+    """Cette fonction attend l’autorisation dans le navigateur, puis valide et sauvegarde les jetons."""
     status, device = request_json("POST", "device", data={
         "client_id": client_id, "scopes": " ".join(sorted(SCOPES)),
     })

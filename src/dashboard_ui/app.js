@@ -2,10 +2,10 @@
 (() => {
   const capabilities = [
     ['messages-square','Conversation sur Twitch','Validé en direct','ready','Répond aux mentions avec le compte bot dédié, en citant le viewer. La connexion et une réponse réelle ont été validées avec toi.','@LumiTheBoat salut'],
-    ['brain','Mémoire des viewers','Présent dans le code','','Historique, faits, résumés et statistiques conservés dans SQLite. Un changement de pseudo conserve la mémoire grâce à l’identifiant Twitch. La mémoire est actuellement commune à toutes les chaînes.','!remember pseudo préfère les jeux coopératifs · streamer/modos'],
+    ['brain','Mémoire des viewers','Présent dans le code','','Historique, faits, résumés et statistiques conservés dans SQLite. Un changement de pseudo conserve la mémoire grâce à l’identifiant Twitch. La mémoire est séparée par chaîne. Les anciens échanges globaux restent archivés et ne sont pas réinjectés.','!remember pseudo préfère les jeux coopératifs · streamer/modos'],
     ['layers','Compression de l’historique','Présent dans le code','','Les anciens échanges sont résumés lorsque le budget de contexte est dépassé. Budget actuel : 2 500 tokens ; cela limite le contexte, pas la longueur visible de chaque réponse.','Automatique après dépassement du budget'],
-    ['globe','Recherche web avec sources','Présent dans le code','','Recherche Internet déclenchée par commande ou par le routeur. La commande !search a une pause globale de 30 s. Toutes les sollicitations respectent également la cadence générale configurée. Internet et le modèle sont nécessaires.','!search ta question'],
-    ['book-open','FAQ et documents','Préparation nécessaire','proposed','Lit TXT, Markdown, PDF et Word puis recherche des passages avec sources. Le modèle bge-m3 n’a pas été installé pendant la mise en route ; la FAQ fournie est fictive et doit être remplacée.','CLI : /ingest puis /ask ta question'],
+    ['globe','Recherche web sans liens','Présent dans le code','','Recherche Internet déclenchée par commande ou par le routeur. Les extraits servent à répondre, sans publier de liens dans le chat. La commande !search a une pause globale de 30 s. Toutes les sollicitations respectent également la cadence générale configurée. Internet et le modèle sont nécessaires.','!search ta question'],
+    ['book-open','FAQ du streamer','Intégrée','ready','FAQ propre à la chaîne, modifiable dans Contexte et injectée dans les réponses. Les informations absentes restent inconnues. L’indexation de documents longs via la CLI nécessite toujours son modèle dédié.','Contexte → FAQ du streamer'],
     ['route','Orientation des questions','Présent dans le code','','Le routeur choisit conversation, documents ou web. Ce mécanisme est intégré aux mentions ; sa qualité dépend du modèle et des connaissances disponibles.','Automatique à chaque mention'],
     ['shield-check','Filtres de sécurité','Présent dans le code','','Filtres dans le code pour plusieurs attaques et masquage de données personnelles. Ils complètent le prompt ; des contournements et des faux positifs sont documentés.','Rapport de tests adversariaux : 48/53 conformes (résultat documenté)'],
     ['notebook-pen','Compte-rendu vivant','Présent dans le code','','Un événement met à jour la section pertinente du compte-rendu. !event est réservé au streamer et aux modérateurs. Le résumé ne provient pas d’une analyse audio ou vidéo du live.','!event description de ce qui vient de se passer'],
@@ -19,7 +19,12 @@
   const root = document.getElementById('lumi-studio');
   const $ = id => document.getElementById(id);
   const csrf = document.querySelector('meta[name="csrf-token"]').content;
-  const fields = {channel:'ls-channel',trigger:'ls-trigger',reply_cooldown:'ls-cadence',mentions_only:'ls-mention',stream_topic:'ls-game',stream_context:'ls-context',tone:'ls-tone',reply_length:'ls-length',avoid_spoilers:'ls-spoilers'};
+  const fields = {auto_memory_enabled:'ls-auto-memory',channel:'ls-channel',trigger:'ls-trigger',reply_cooldown:'ls-cadence',mentions_only:'ls-mention',audio_enabled:'ls-audio',audio_wake_word:'ls-wake',mascot_enabled:'ls-mascot',mascot_interval:'ls-mascot-interval',stream_topic:'ls-game',stream_context:'ls-context',tone:'ls-tone',reply_length:'ls-length',avoid_spoilers:'ls-spoilers'};
+  let profileChannel=null;
+  let profileDirty=false;
+  let profileLoaded=false;
+  let faqChannel=null;
+  let faqDirty=false;
   let latest = null;
   let dirty = false;
   let busy = false;
@@ -72,9 +77,10 @@
   }
   function previewContext() {
     const s=settings();
+    $('ls-mascot-value').textContent=Math.round(s.mascot_interval/60)+' min';
     $('ls-cadence-value').textContent=s.reply_cooldown===0?'Sans pause':s.reply_cooldown+' s';
     const tones={friendly:'amical et naturel',calm:'calme et discret',energetic:'enthousiaste'};
-    $('ls-context-preview').textContent='Lumi répond avec un ton '+tones[s.tone]+', '+(s.reply_length==='brief'?'en une phrase courte':'en une ou deux phrases')+'. '+(s.stream_topic?'Sujet : '+s.stream_topic+'. ':'')+'Il n’invente aucune information sur le live'+(s.avoid_spoilers?' et évite les spoilers.':'.')+(s.stream_context?' Contexte : '+s.stream_context:'');
+    $('ls-context-preview').textContent='Lumi répond avec un ton '+tones[s.tone]+', '+(s.reply_length==='brief'?'en une phrase courte':s.reply_length==='adaptive'?'avec une longueur adaptée, dans la limite Twitch de 500 caractères':'en une ou deux phrases')+'. '+(s.stream_topic?'Sujet : '+s.stream_topic+'. ':'')+'Il n’invente aucune information sur le live'+(s.avoid_spoilers?' et évite les spoilers.':'.')+(s.stream_context?' Contexte : '+s.stream_context:'');
   }
   function displayState(state) {
     latest=state;
@@ -88,6 +94,11 @@
     $('bot-state-text').textContent=state.external_bot?'Actif dans un autre terminal':phases[state.phase] || state.phase;
     $('connection-status').textContent='Local · '+(state.external_bot?'Bot externe':phases[state.phase]);
     $('connection-status').className='ls-tag'+(state.phase==='running'?' ls-ready':'');
+    const audioLabels={stopped:'Désactivée',starting:'Connexion…',loading:'Modèle en chargement…',listening:'Écoute active',missing:'Installation requise',unavailable:'Son indisponible'};
+    $('audio-state').textContent=audioLabels[state.audio?.stage] || 'Désactivée';
+    $('audio-setup').textContent=state.audio?.dependencies_ready?'Transcription installée. Active l’écoute, enregistre et démarre le bot.':'Installation : .venv/bin/pip install -r requirements-audio.txt';
+    const memory=state.memory;
+    if(memory)$('memory-status').textContent='Active sur '+memory.channel+' · '+memory.viewers+' viewers · '+memory.messages+' messages enregistrés · '+memory.facts+' faits (dont '+memory.auto_facts+' automatiques) · '+memory.summaries+' résumés.';
     const health=state.health;
     $('model-name').textContent=health.model || 'Non vérifié';
     const expired=health.expires_at && health.expires_at<Date.now()/1000;
@@ -128,6 +139,8 @@
     root.querySelectorAll('[data-page]').forEach(el=>{if(el.dataset.page===next)el.setAttribute('aria-current','page');else el.removeAttribute('aria-current');});
     $('ls-save').hidden=['features','review'].includes(next);$('ls-save-state').hidden=$('ls-save').hidden;
     if(next==='review')loadReport();
+    if(next==='context' && !faqDirty)loadFaq();
+    if(next==='context' && !profileDirty)loadProfile();
   }
   async function action(work) {
     if(busy)return;busy=true;error('');if(latest)displayState(latest);
@@ -135,8 +148,33 @@
     finally{busy=false;await refresh();}
   }
   async function save() {
-    const state=await api('/api/settings',settings());dirty=false;$('ls-save-state').textContent='Enregistré · appliqué aux prochains messages';displayState(state);
+    const state=await api('/api/settings',settings());dirty=false;fillSettings(state.settings);$('ls-save-state').textContent='Enregistré · appliqué aux prochains messages';displayState(state);
   }
+  async function loadProfile() {
+    try {const data=await api('/api/streamer-profile');profileChannel=data.channel;
+      $('streamer-questions').replaceChildren();
+      Object.entries(data.questions).forEach(([key,question])=>{
+        const label=document.createElement('label');label.className='ls-field';label.textContent=question;
+        const input=document.createElement('textarea');input.maxLength=700;input.rows=2;input.dataset.profile=key;input.value=data.answers[key] || '';input.addEventListener('input',()=>{profileDirty=true;$('profile-status').textContent='Fiche modifiée, à enregistrer';});
+        label.append(input);$('streamer-questions').append(label);
+      });
+      $('profile-status').textContent='Fiche de '+data.channel+(Object.values(data.answers).some(Boolean)?' · enregistrée':' · à compléter');
+      if(!profileLoaded && !Object.values(data.answers).some(Boolean)){profileLoaded=true;showPage('context');}else profileLoaded=true;
+    }catch(err){error(err.message);}
+  }
+  $('save-profile').addEventListener('click',()=>action(async()=>{
+    const answers={};root.querySelectorAll('[data-profile]').forEach(el=>answers[el.dataset.profile]=el.value);
+    await api('/api/streamer-profile',{channel:profileChannel,answers});profileDirty=false;$('profile-status').textContent='Fiche enregistrée · utilisée par Lumi aux prochains messages';
+  }));
+  async function loadFaq() {
+    try { const data=await api('/api/faq');faqChannel=data.channel;$('ls-faq').value=data.content;faqDirty=false;$('faq-status').textContent='FAQ de '+data.channel+' · enregistrée'; }
+    catch(err){error(err.message);}
+  }
+  $('ls-faq').addEventListener('input',()=>{faqDirty=true;$('faq-status').textContent='FAQ modifiée, à enregistrer';});
+  $('save-faq').addEventListener('click',()=>action(async()=>{
+    if(!faqChannel)throw new Error('Charge la FAQ avant de l’enregistrer.');
+    await api('/api/faq',{channel:faqChannel,content:$('ls-faq').value});faqDirty=false;$('faq-status').textContent='FAQ enregistrée · utilisée aux prochains messages';
+  }));
   async function loadReport() {
     try {const data=await api('/api/report');$('export-report').disabled=!data.report;
       $('ls-report-preview').textContent=data.report?Object.entries(data.titles).map(([key,title])=>title+'\n'+data.report[key]).join('\n\n'):'Aucun compte-rendu pour le moment. Utilise !moment ou !event dans le chat. Les statistiques sont écrites à l’arrêt du bot.';
@@ -170,7 +208,8 @@
     const format=$('ls-export').value;const response=await api('/api/export',{format},true);const blob=await response.blob();const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='StreamReport.'+format;link.click();setTimeout(()=>URL.revokeObjectURL(url),30000);
   }));
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh();});
-  window.addEventListener('beforeunload',event=>{if(dirty){event.preventDefault();event.returnValue='';}});
+  window.addEventListener('beforeunload',event=>{if(dirty || faqDirty || profileDirty){event.preventDefault();event.returnValue='';}});
+  loadProfile();
   refresh().then(()=>api('/api/check',{}).then(refresh).catch(err=>error(err.message)));
   setInterval(()=>{if(!document.hidden)refresh();},2500);
 })();

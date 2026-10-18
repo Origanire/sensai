@@ -1,17 +1,9 @@
-## @file fakes.py
-# @brief Test doubles: a scripted Ollama client, so the unit tests run
-# without a model and give the same result every time.
+# Ce module simule Ollama avec des réponses prévues pour rendre les tests reproductibles et indépendants du modèle.
 
 
-## @brief Ollama client whose answers are given in advance.
+# Cette classe fournit les réponses préparées pour les tests.
 class FakeClient:
-    ## @brief Build the fake client.
-    #
-    # @param json_answers Objects returned, in order, by chat_json().
-    # @param texts Texts returned, in order, by chat(), chat_silent() and
-    #              chat_with_tools().
-    # @param tool_calls Tool call lists returned, in order, by chat_with_tools().
-    # @param vectors Dictionary text -> embedding used by embed().
+    # On prépare les réponses texte, JSON, outils et vecteurs qui seront renvoyés dans l’ordre.
     def __init__(self, json_answers=None, texts=None, tool_calls=None, vectors=None):
         self.json_answers = list(json_answers or [])
         self.texts = list(texts or [])
@@ -19,7 +11,7 @@ class FakeClient:
         self.vectors = vectors or {}
         self.embedding_model = "fake-embed"
         self.last_prompt_tokens = 0
-        ## @brief Every message list received, to inspect the prompts.
+        # On garde les messages reçus pour vérifier les consignes envoyées au modèle.
         self.requests = []
 
     def chat_json(self, messages, schema):

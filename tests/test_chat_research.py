@@ -1,4 +1,4 @@
-"""Chat → router → research → source-backed answer; all external IO mocked."""
+"""Ces tests vérifient le parcours du chat jusqu’à la réponse de recherche, avec des appels externes simulés."""
 from unittest.mock import patch
 
 from src.agents.chat_agent import ViewerState, respond, format_search_reply
@@ -28,7 +28,8 @@ def test_full_chat_research_pipeline_and_memory():
         with patch('src.tools.web_search.web_search', return_value=RESULTS) as search:
             reply = respond(ctx, 'v1', state, 'cherche sur internet le nouveau mode du jeu')
         search.assert_called_once_with('jeu version 2', max_results=3)
-        assert 'https://example.org/notes' in reply
+        assert 'https://' not in reply
+        assert 'mode coopératif' in reply
         assert 'invented.example' not in reply
         assert ctx['last_route'] == 'web'
         assert ctx['stats']['routes']['web'] == 1
@@ -54,10 +55,10 @@ def test_unsafe_sources_are_not_passed_to_model():
     assert len(client.requests) == 1
 
 
-def test_twitch_length_preserves_source_and_handles_huge_url():
+def test_twitch_length_removes_sources_and_handles_huge_url():
     reply = format_search_reply('Explication '*100 + ' https://example.org/notes', 480)
     assert len(reply) <= 480
-    assert reply.endswith('https://example.org/notes')
+    assert 'example.org' not in reply
     assert len(format_search_reply('Source https://example.org/' + 'a'*600, 480)) <= 480
 
 

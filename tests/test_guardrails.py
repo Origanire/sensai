@@ -1,5 +1,4 @@
-## @file test_guardrails.py
-# @brief Unit tests of the content and privacy guardrails (EV2).
+# Ces tests vérifient les filtres de contenu et de données personnelles.
 
 import unittest
 

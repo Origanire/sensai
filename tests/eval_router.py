@@ -1,9 +1,4 @@
-## @file eval_router.py
-# @brief Measure the router's accuracy (needs Ollama).
-#
-# Usage: python -m tests.eval_router [model]
-# The questions are different from the examples written in the router's
-# prompt: the score shows how it generalizes, not whether it memorized.
+# Ce script mesure le choix du routeur avec des questions différentes de ses exemples. Il nécessite Ollama.
 
 import sys
 import time
@@ -11,7 +6,7 @@ import time
 from src.agents.router import route
 from src.core.ollama_client import OllamaClient
 
-## @brief Viewer messages and the agent that should answer them.
+# Ces messages sont associés à l’agent qui devrait leur répondre.
 CASES = [
     ("coucou toi", "chat"),
     ("t'es un bot ou un humain ?", "chat"),

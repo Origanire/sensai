@@ -25,14 +25,26 @@
               <div class="ls-account"><div class="ls-avatar"><i data-lucide="sailboat" aria-hidden="true"></i></div><div><h3>LumiTheBoat</h3><span class="ls-muted">Le compte qui écrit dans le chat</span></div></div>
               <label class="ls-field" for="ls-channel">Chaîne à suivre<input id="ls-channel" value="OriganireTV" spellcheck="false" maxlength="25" autocomplete="off"></label>
               <label class="ls-field" for="ls-trigger">Le bot répond quand on écrit…<input id="ls-trigger" value="@LumiTheBoat" spellcheck="false" maxlength="40" autocomplete="off"></label>
-              <div class="ls-row" style="margin-top:14px"><button class="cursor-interaction" id="check-access">Vérifier les connexions</button><button class="cursor-interaction" id="connect-account">Reconnecter Twitch</button></div><div class="ls-info" id="auth-box" hidden><p id="auth-message"></p><p id="auth-code" class="ls-auth-code"></p><a href="https://www.twitch.tv/activate" target="_blank" rel="noreferrer">Ouvrir Twitch dans mon navigateur</a></div><p class="ls-muted" style="margin-top:12px">Le compte du bot et la chaîne suivie sont distincts. La mémoire actuelle reste partagée si tu changes de chaîne.</p>
+              <div class="ls-row" style="margin-top:14px"><button class="cursor-interaction" id="check-access">Vérifier les connexions</button><button class="cursor-interaction" id="connect-account">Reconnecter Twitch</button></div><div class="ls-info" id="auth-box" hidden><p id="auth-message"></p><p id="auth-code" class="ls-auth-code"></p><a href="https://www.twitch.tv/activate" target="_blank" rel="noreferrer">Ouvrir Twitch dans mon navigateur</a></div><p class="ls-muted" style="margin-top:12px">Le compte du bot et la chaîne suivie sont distincts. La mémoire et le contexte sont séparés par chaîne. Après un changement, enregistre puis vérifie le contexte restauré avant de démarrer.</p>
             </section>
             <section class="ls-panel">
               <div class="ls-panel-head"><h2>Rythme des réponses</h2><span class="ls-tag ls-ready">Réglage actif</span></div>
               <label class="ls-field" for="ls-cadence"><span class="ls-row ls-between"><span>Pause minimum entre deux réponses</span><output class="ls-value" id="ls-cadence-value">15 s</output></span><input type="range" id="ls-cadence" min="0" max="120" step="5" value="15"></label>
               <div class="ls-minmax"><span>Sans pause</span><span>2 minutes</span></div>
-              <label class="ls-check"><input type="checkbox" id="ls-mention" checked> Répondre uniquement aux mentions et commandes</label>
-              <p class="ls-muted" style="margin-top:13px">Pendant cette pause, les sollicitations sont ignorées. Les délais propres à !search (30 s) et !moment (60 s par viewer) restent appliqués.</p>
+              <label class="ls-check"><input type="checkbox" id="ls-mention" checked> Réponses directes : mentions et commandes seulement</label>
+              <hr class="ls-divider">
+              <label class="ls-check"><input type="checkbox" id="ls-mascot" checked> Mascotte discrète : autoriser de rares réactions spontanées</label>
+              <label class="ls-field" for="ls-mascot-interval" style="margin-top:12px">Espacement minimum des interventions <output id="ls-mascot-value">3 min</output><input type="range" id="ls-mascot-interval" min="180" max="900" step="60" value="180"></label>
+              <p class="ls-muted">Lumi réagit aux paroles du chat, sans voir la vidéo. Au moins 6 messages de 2 personnes et un moment propice sont nécessaires. Il peut choisir de se taire. Ce mode est indépendant des réponses aux mentions.</p>
+              <p class="ls-muted" style="margin-top:13px">Pendant la pause minimum entre deux réponses (premier curseur), les sollicitations sont ignorées. L’espacement des réactions spontanées ne bloque pas les mentions. Les délais propres à !search (30 s) et !moment (60 s par viewer) restent appliqués.</p>
+            </section>
+            <section class="ls-panel">
+              <div class="ls-panel-head"><h2>Écoute du live</h2><span class="ls-tag" id="audio-state">Désactivée</span></div>
+              <label class="ls-check"><input type="checkbox" id="ls-audio"> Écouter le son de la chaîne suivie</label>
+              <label class="ls-field" for="ls-wake">Mot d’appel vocal<input id="ls-wake" value="Lumi" maxlength="20" autocomplete="off"></label>
+              <p class="ls-muted">Dis « Lumi, … » dans le live pour obtenir une réponse écrite dans le chat. Transcription locale par séquences de 12 secondes, plus le délai Twitch. Aucun enregistrement audio conservé.</p>
+              <p class="ls-muted">Le son mélange ta voix, le jeu et les invités : Lumi ne peut pas certifier qui parle. Les commandes de modération restent réservées au chat authentifié. Les paroles sans mot d’appel servent uniquement de contexte temporaire.</p>
+              <p class="ls-muted" id="audio-setup"></p>
             </section>
           </div>
           <aside class="ls-stack">
@@ -43,7 +55,7 @@
               <div class="ls-chat-line ls-chat-reply" aria-live="polite"><strong>LumiTheBoat <span class="ls-tag">BOT</span></strong><p id="ls-answer">Écris un message pour tester le contexte et le ton des réponses.</p></div>
               <label class="ls-field" for="ls-message">Message d’essai<input id="ls-message" value="@LumiTheBoat salut !" maxlength="200" autocomplete="off"></label>
               <button class="cursor-interaction" id="ls-simulate" style="margin-top:12px;width:100%">Tester avec le modèle</button>
-              <p class="ls-muted" style="margin-top:12px">Cet essai appelle Ollama, sans modifier la mémoire des viewers.</p>
+              <p class="ls-muted" style="margin-top:12px">Cet essai appelle Ollama, sans modifier la mémoire des viewers. Limite : 500 caractères, dont 8 réservés à une mention fictive.</p>
             </section>
             <section class="ls-panel">
               <div class="ls-panel-head"><h2>Le bot aujourd’hui</h2></div>
@@ -60,13 +72,13 @@
             <div class="ls-panel-head"><h2>Contexte du stream</h2></div>
             <label class="ls-field" for="ls-game">Jeu ou sujet du jour<input id="ls-game" placeholder="Ex. : découverte d’un jeu, discussion…" maxlength="100"></label>
             <label class="ls-field" for="ls-context">Informations à connaître<textarea id="ls-context" placeholder="Objectif du live, règles de chat, informations confirmées…" maxlength="2500"></textarea></label>
-            <div class="ls-field-pair"><label class="ls-field" for="ls-tone">Ton des réponses<select id="ls-tone"><option value="friendly">Amical et naturel</option><option value="calm">Calme et discret</option><option value="energetic">Enthousiaste</option></select></label><label class="ls-field" for="ls-length">Longueur souhaitée<select id="ls-length"><option value="short">Une ou deux phrases</option><option value="brief">Une phrase courte</option></select></label></div>
+            <div class="ls-field-pair"><label class="ls-field" for="ls-tone">Ton des réponses<select id="ls-tone"><option value="friendly">Amical et naturel</option><option value="calm">Calme et discret</option><option value="energetic">Enthousiaste</option></select></label><label class="ls-field" for="ls-length">Longueur souhaitée<select id="ls-length"><option value="adaptive">Naturelle · jusqu’à 500 caractères</option><option value="short">Une ou deux phrases</option><option value="brief">Une phrase courte</option></select></label></div>
             <label class="ls-check"><input type="checkbox" checked id="ls-spoilers"> Éviter les spoilers</label>
             <p class="ls-muted" style="margin-top:14px">Les filtres de sécurité restent appliqués dans le code. Enregistre pour utiliser ces consignes dans le chat Twitch.</p>
           </section>
           <aside class="ls-stack">
             <section class="ls-panel"><div class="ls-panel-head"><h2>Consignes proposées</h2></div><p id="ls-context-preview" style="font-size:13px">Lumi répond avec un ton amical, en une ou deux phrases. Il n’invente aucune information sur le live et évite les spoilers.</p></section>
-            <section class="ls-panel"><div class="ls-panel-head"><h2>Connaissances de la chaîne</h2><span class="ls-tag ls-proposed">À préparer</span></div><p class="ls-muted">Planning, FAQ, matériel et liens officiels. La recherche documentaire existe ; il faut installer son modèle et remplacer la FAQ d’exemple.</p><hr class="ls-divider"><span class="ls-tag">Formats : TXT · MD · PDF · DOCX</span></section>
+            <section class="ls-panel"><div class="ls-panel-head"><h2>Fais connaissance avec Lumi</h2></div><p class="ls-muted">Le speed dating de ta chaîne : réponds aux questions utiles, laisse le reste vide. Tes réponses deviennent la fiche du streamer utilisée par Lumi. Tu peux les revoir avant chaque live.</p><div id="streamer-questions"></div><button id="save-profile">Enregistrer ma fiche streamer</button><p id="profile-status" class="ls-muted" aria-live="polite"></p></section><section class="ls-panel"><div class="ls-panel-head"><h2>FAQ du streamer</h2><span class="ls-tag ls-ready">Reliée à Lumi</span></div><p class="ls-muted">Une base propre à chaque chaîne, utilisée dans les réponses. Complète uniquement les informations confirmées. Le sujet actuel du live reste dans les réglages.</p><label class="ls-field" for="ls-faq">Questions et réponses<textarea id="ls-faq" maxlength="8000" rows="14"></textarea></label><button id="save-faq">Enregistrer la FAQ</button><p id="faq-status" class="ls-muted" aria-live="polite"></p><hr class="ls-divider"><h3>Mémoire des viewers</h3><label class="ls-check"><input type="checkbox" id="ls-auto-memory" checked> Retenir automatiquement les préférences de jeu déclarées dans le chat</label><p class="ls-muted">Même sans mention de Lumi : jeu préféré, personnage principal et préférence de jeu. Jusqu’à trois souvenirs par viewer, actualisés par ses corrections et utilisés pendant 90 jours. Extraction limitée à une tentative toutes les 10 secondes. Décoche puis enregistre les réglages pour arrêter l’apprentissage ; les souvenirs existants restent disponibles.</p><p id="memory-status" class="ls-muted"></p><p class="ls-muted">Les échanges adressés au bot sont enregistrés et relus à son retour. Un fait explicite s’ajoute avec !remember pseudo fait (streamer/modérateurs). Les essais privés et les paroles transcrites ne sont pas mémorisés comme des échanges de viewers.</p></section>
           </aside>
         </div>
       </section>
@@ -77,7 +89,7 @@
         <div class="ls-feature-grid" id="ls-features"></div>
         <section class="ls-panel ls-detail" id="ls-detail" aria-live="polite"><h2 id="ls-detail-title">Conversation sur Twitch</h2><p id="ls-detail-description">Répond aux mentions et cite le viewer avec son compte bot dédié. La connexion et une réponse réelle ont été validées avec toi.</p><code id="ls-detail-command">@LumiTheBoat salut</code></section>
         <div class="ls-section-label">Pour une prochaine version</div>
-        <div class="ls-panel ls-summary-list"><div><span>File de réponses pendant une pause</span><strong>Non implémentée</strong></div><div><span>Reconnexion automatique en plein live</span><strong>À développer</strong></div><div><span>Mémoire séparée par chaîne</span><strong>À développer</strong></div><div><span>Comparaison avec / sans bot</span><strong>À instrumenter</strong></div></div>
+        <div class="ls-panel ls-summary-list"><div><span>File de réponses pendant une pause</span><strong>Non implémentée</strong></div><div><span>Reconnexion automatique en plein live</span><strong>À développer</strong></div><div><span>Comparaison avec / sans bot</span><strong>À instrumenter</strong></div></div>
       </section>
       <section data-screen="review" aria-label="Bilan et analyse" hidden>
         <div class="ls-heading"><div><h1>Un bilan utile, pas du bruit.</h1><p class="ls-subtitle">Messages reçus hors compte du bot, réponses envoyées et temps de traitement.</p></div><span class="ls-tag" id="session-label">Aucune session démarrée</span></div>

@@ -1,5 +1,4 @@
-## @file test_report.py
-# @brief Unit tests of the living stream report (M4).
+# Ces tests vérifient les mises à jour du compte-rendu du live.
 
 import tempfile
 import unittest

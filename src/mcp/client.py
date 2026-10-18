@@ -1,11 +1,4 @@
-## @file client.py
-# @brief Minimal MCP client (Model Context Protocol) over stdio.
-#
-# An MCP server is a subprocess that speaks JSON-RPC 2.0, one message per
-# line, on its stdin/stdout. The client starts it, runs the handshake
-# (initialize, then notifications/initialized), lists its tools
-# (tools/list) and calls them (tools/call). Written by hand on purpose:
-# no LLM framework is allowed, and the protocol is small.
+# Ce module lance un serveur MCP et échange des messages JSON-RPC avec lui par ses entrées et sorties standard.
 
 import json
 import os
@@ -16,43 +9,34 @@ import sys
 import threading
 from pathlib import Path
 
-## @brief Root of the repository: servers are started from there.
+# Les serveurs sont lancés depuis ce dossier du projet.
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-## @brief Folder holding the stderr of each server, for debugging.
+# Ce dossier conserve les erreurs des serveurs pour le débogage.
 LOG_DIR = PROJECT_ROOT / "logs"
-## @brief MCP protocol version announced by the client.
+# Cette valeur annonce la version du protocole MCP utilisée par le client.
 PROTOCOL_VERSION = "2025-06-18"
-## @brief Time allowed for a server to answer a request, in seconds.
+# Ce délai limite l’attente d’une réponse du serveur.
 REQUEST_TIMEOUT = 60
-## @brief JSON-RPC error code for an unknown method.
+# Ce code signale une méthode JSON-RPC inconnue.
 METHOD_NOT_FOUND = -32601
 
 
-## @brief Raised when a server cannot be started or answers with an error.
+# Cette erreur indique un échec de lancement ou de réponse du serveur.
 class MCPError(Exception):
     pass
 
 
-## @brief Connection to one MCP server running as a subprocess.
+# Cette classe représente la connexion à un serveur MCP lancé dans un processus séparé.
 class MCPClient:
-    ## @brief Start the server and run the MCP handshake.
-    #
-    # "python" as command means the interpreter running Sensai, so our own
-    # server uses the same virtual environment.
-    #
-    # @param name Name of the server, as written in config.yaml.
-    # @param command Executable to run (python, npx, uvx...).
-    # @param args Arguments of the command.
-    # @param env Extra environment variables for the server.
-    # @exception MCPError If the server cannot be started or initialized.
+    # On lance le serveur et on initialise le protocole. La commande python utilise le même interpréteur que Sensai.
     def __init__(self, name, command, args=None, env=None):
-        ## @brief Name of the server.
+        # Ce nom identifie le serveur.
         self.name = name
-        ## @brief Answers waiting to be read, by request id.
+        # Ces réponses attendent d’être récupérées par leur identifiant de requête.
         self._pending = {}
-        ## @brief Next request id.
+        # Ce compteur fournit le prochain identifiant de requête.
         self._next_id = 1
-        ## @brief Protects _next_id and _pending between threads.
+        # Ce verrou protège les requêtes partagées entre plusieurs tâches.
         self._lock = threading.Lock()
 
         executable = sys.executable if command in ("python", "python3") else shutil.which(command)
@@ -60,10 +44,10 @@ class MCPClient:
             raise MCPError(f"commande « {command} » introuvable")
 
         LOG_DIR.mkdir(exist_ok=True)
-        ## @brief File receiving the server's stderr.
+        # Ce fichier reçoit les erreurs du serveur.
         self._log = open(LOG_DIR / f"mcp_{name}.log", "w", encoding="utf-8")
         try:
-            ## @brief The server's process.
+            # Cette variable contient le processus du serveur.
             self.process = subprocess.Popen(
                 [executable, *(args or [])],
                 stdin=subprocess.PIPE,
@@ -85,15 +69,11 @@ class MCPClient:
             "capabilities": {},
             "clientInfo": {"name": "sensai", "version": "1.0"},
         })
-        ## @brief Name and version announced by the server.
+        # Ces informations décrivent le nom et la version annoncés par le serveur.
         self.server_info = result.get("serverInfo", {})
         self.notify("notifications/initialized")
 
-    ## @brief Read the server's messages and route the answers.
-    #
-    # Runs in a thread. Answers are handed to the request waiting for their
-    # id; requests from the server (ping...) are answered here; other
-    # notifications (logs, progress) are ignored.
+    # Cette méthode lit les messages du serveur, distribue les réponses et traite ses demandes comme les PING.
     def _read_loop(self):
         for line in self.process.stdout:
             line = line.strip()
@@ -116,14 +96,12 @@ class MCPClient:
                     self._send({"jsonrpc": "2.0", "id": message["id"], "error": {
                         "code": METHOD_NOT_FOUND, "message": "not supported by sensai"}})
 
-        # The server exited: wake up every request still waiting
+        # Le serveur s’est arrêté : on débloque les requêtes qui attendaient encore une réponse.
         with self._lock:
             for waiting in self._pending.values():
                 waiting.put({"error": {"message": "le serveur MCP s'est arrêté"}})
 
-    ## @brief Write one JSON-RPC message on the server's stdin.
-    #
-    # @param message Message to send.
+    # Cette méthode écrit un message JSON-RPC vers le serveur.
     def _send(self, message):
         try:
             self.process.stdin.write(json.dumps(message, ensure_ascii=False) + "\n")
@@ -131,12 +109,7 @@ class MCPClient:
         except (BrokenPipeError, OSError, ValueError) as error:
             raise MCPError(f"serveur « {self.name} » injoignable : {error}") from error
 
-    ## @brief Send a request and wait for its answer.
-    #
-    # @param method JSON-RPC method.
-    # @param params Parameters of the method.
-    # @return The "result" of the answer.
-    # @exception MCPError On a JSON-RPC error, a timeout or a dead server.
+    # Cette méthode envoie une requête et attend sa réponse, avec gestion des erreurs et du délai.
     def request(self, method, params=None):
         with self._lock:
             request_id = self._next_id
@@ -161,20 +134,14 @@ class MCPClient:
             raise MCPError(answer["error"].get("message", "erreur inconnue"))
         return answer.get("result", {})
 
-    ## @brief Send a notification (a message that gets no answer).
-    #
-    # @param method JSON-RPC method.
-    # @param params Parameters of the method.
+    # Cette méthode envoie une notification qui n’attend pas de réponse.
     def notify(self, method, params=None):
         message = {"jsonrpc": "2.0", "method": method}
         if params is not None:
             message["params"] = params
         self._send(message)
 
-    ## @brief List the server's tools, following the pagination.
-    #
-    # @return List of MCP tool definitions ("name", "description",
-    #         "inputSchema", "annotations").
+    # Cette méthode récupère tous les outils du serveur, page après page.
     def list_tools(self):
         tools = []
         cursor = None
@@ -185,12 +152,7 @@ class MCPClient:
             if not cursor:
                 return tools
 
-    ## @brief Call a tool and return its result as text.
-    #
-    # @param name Name of the tool.
-    # @param arguments Arguments, matching the tool's inputSchema.
-    # @return A (text, is_error) pair.
-    # @exception MCPError If the call itself fails (protocol, server down).
+    # Cette méthode appelle un outil et renvoie son texte ainsi qu’un indicateur d’erreur.
     def call_tool(self, name, arguments):
         result = self.request("tools/call", {"name": name, "arguments": arguments})
         parts = []
@@ -201,7 +163,7 @@ class MCPClient:
                 parts.append(f"[contenu {item.get('type')} non affiché]")
         return "\n".join(parts), bool(result.get("isError"))
 
-    ## @brief Stop the server.
+    # Cette méthode arrête le serveur.
     def close(self):
         try:
             self.process.stdin.close()

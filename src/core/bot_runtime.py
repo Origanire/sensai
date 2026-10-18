@@ -1,4 +1,4 @@
-"""Structured, content-free telemetry and a single-bot lock (macOS/Linux)."""
+"""Ce module transmet les événements du bot sans leur contenu et empêche de lancer deux bots en même temps."""
 
 import fcntl
 import json
@@ -19,7 +19,7 @@ def emit(kind, **data):
             except OSError:
                 pass
             return
-        # A leading newline also separates this from streaming model output.
+        # On ajoute un saut de ligne pour séparer cet événement du texte généré par le modèle.
         print("\n" + PREFIX + json.dumps({"kind": kind, "at": time.time(), **data}), flush=True)
 
 

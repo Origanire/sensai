@@ -1,5 +1,4 @@
-## @file test_export.py
-# @brief Tests of the conversation and report exports (X3).
+# Ces tests vérifient les exports des conversations et des rapports.
 
 import json
 import tempfile

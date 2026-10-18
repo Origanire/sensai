@@ -1,21 +1,17 @@
-## @file tools.py
-# @brief Tool calling (T1): the model decides mid-conversation to call a
-# tool exposed by an MCP server, the code runs it and hands the result back.
+# Ce module exécute les outils demandés par le modèle et lui transmet leurs résultats pour continuer la conversation.
 
 import json
 
 from src.mcp.client import MCPClient, MCPError
 
-## @brief Maximum number of tool rounds for one user message: a small model
-# can loop on the same call, this caps the cost.
+# Cette limite évite que le modèle demande des outils en boucle pour un seul message.
 DEFAULT_MAX_STEPS = 4
-## @brief Length of a tool result shown in the terminal.
+# Cette valeur limite le résultat d’un outil affiché dans le terminal.
 PREVIEW_LENGTH = 200
-## @brief Maximum length of a tool result given to the model, in characters.
+# Cette valeur limite la taille du résultat transmis au modèle.
 MAX_RESULT_LENGTH = 4000
 
-## @brief Instructions sent with the tools: without them, llama3.2 calls a
-# tool even to answer "hello".
+# Ces consignes évitent d’appeler un outil pour une simple conversation.
 TOOLS_SYSTEM_PROMPT = """Tu es Sensai, l'assistant d'un streamer Twitch. Tu as accès à des outils.
 
 Quel outil pour quelle demande :
@@ -33,20 +29,15 @@ Si l'outil renvoie une erreur ou ne trouve rien, dis-le simplement : n'invente
 jamais une information. Réponds en français, de façon concise."""
 
 
-## @brief Every tool of every configured MCP server, behind one interface.
+# Cette classe rassemble les outils de tous les serveurs MCP derrière une même interface.
 class ToolRegistry:
-    ## @brief Connect to the MCP servers of the configuration.
-    #
-    # A server that fails to start is skipped with a message: the assistant
-    # keeps working with the others.
-    #
-    # @param settings "mcp" section of config.yaml.
+    # On connecte les serveurs configurés et on ignore ceux qui échouent, pour garder les autres outils disponibles.
     def __init__(self, settings):
-        ## @brief Open connections, by server name.
+        # Ces connexions sont regroupées par nom de serveur.
         self.servers = {}
-        ## @brief Tool definitions, by tool name: (server name, MCP definition).
+        # Ces définitions associent chaque outil à son serveur.
         self.tools = {}
-        ## @brief Maximum number of tool rounds per message.
+        # Cette valeur limite le nombre de tours d’outils par message.
         self.max_steps = settings.get("max_steps", DEFAULT_MAX_STEPS)
 
         for name, server in (settings.get("servers") or {}).items():
@@ -67,9 +58,7 @@ class ToolRegistry:
                     continue
                 self.tools[tool["name"]] = (name, tool)
 
-    ## @brief Tool definitions in the format expected by Ollama.
-    #
-    # @return List of {"type": "function", "function": {...}} dicts.
+    # Cette méthode décrit les outils dans le format attendu par Ollama.
     def ollama_tools(self):
         return [{
             "type": "function",
@@ -80,25 +69,12 @@ class ToolRegistry:
             },
         } for _, tool in self.tools.values()]
 
-    ## @brief Tell whether a tool may change something.
-    #
-    # Relies on the MCP "readOnlyHint" annotation: a tool that does not
-    # declare itself read-only is treated as a write, to be safe.
-    #
-    # @param name Name of the tool.
-    # @return True if a confirmation is needed before running it.
+    # Cette méthode vérifie si l’outil peut modifier des données. Sans indication de lecture seule, une confirmation est nécessaire.
     def needs_confirmation(self, name):
         _, tool = self.tools[name]
         return not (tool.get("annotations") or {}).get("readOnlyHint", False)
 
-    ## @brief Run a tool on its server.
-    #
-    # Never raises: a failure is returned as text, so the model can read it
-    # and tell the user, or try something else.
-    #
-    # @param name Name of the tool.
-    # @param arguments Arguments chosen by the model.
-    # @return Text result.
+    # Cette méthode exécute l’outil sur son serveur et transforme les échecs en texte lisible par le modèle.
     def call(self, name, arguments):
         if name not in self.tools:
             return f"Erreur : l'outil « {name} » n'existe pas. Outils disponibles : {', '.join(self.tools)}."
@@ -110,9 +86,7 @@ class ToolRegistry:
         text = text[:MAX_RESULT_LENGTH]
         return f"Erreur : {text}" if is_error else text
 
-    ## @brief Describe the available tools, for display.
-    #
-    # @return One line per tool, with its server and whether it writes.
+    # Cette méthode liste les outils disponibles et indique ceux qui écrivent des données.
     def describe(self):
         if not self.tools:
             return "Aucun outil MCP disponible."
@@ -122,17 +96,13 @@ class ToolRegistry:
             lines.append(f"- {name} [{server}, {mode}]")
         return "\n".join(lines)
 
-    ## @brief Stop every server.
+    # Cette méthode arrête tous les serveurs MCP.
     def close(self):
         for client in self.servers.values():
             client.close()
 
 
-## @brief Ask the user to approve a tool call (human in the loop).
-#
-# @param name Name of the tool.
-# @param arguments Arguments chosen by the model.
-# @return True if the user typed "o" / "oui" / "y".
+# Cette fonction demande à l’utilisateur de confirmer l’appel d’un outil.
 def ask_confirmation(name, arguments):
     shown = json.dumps(arguments, ensure_ascii=False)
     try:
@@ -142,10 +112,7 @@ def ask_confirmation(name, arguments):
     return answer.strip().lower() in ("o", "oui", "y", "yes")
 
 
-## @brief Tell whether a text answer is in fact a tool call written as JSON.
-#
-# @param content Text answer of the model.
-# @return True for a JSON object with a "name" and "parameters"/"arguments".
+# Cette fonction détecte un appel d’outil écrit par erreur comme une réponse JSON ordinaire.
 def looks_like_tool_call(content):
     text = (content or "").strip().strip("`").removeprefix("json").strip()
     if not (text.startswith("{") and text.endswith("}")):
@@ -158,19 +125,7 @@ def looks_like_tool_call(content):
         and ("parameters" in data or "arguments" in data)
 
 
-## @brief Answer a conversation, letting the model call tools as needed.
-#
-# Loop: the model answers or asks for tools; each call is run (after a
-# confirmation for tools that write) and its result appended as a "tool"
-# message; the model is called again with the results, until it answers
-# in text or max_steps rounds have passed. The assistant's tool requests
-# and the results are appended to messages: they stay in the history.
-#
-# @param client OllamaClient.
-# @param messages Conversation, modified in place.
-# @param registry ToolRegistry.
-# @param confirm Function (name, arguments) -> bool, asked before a write.
-# @return The final text answer, or None if the model failed.
+# Cette fonction alterne les réponses du modèle et les appels d’outils, avec confirmation pour les actions qui écrivent.
 def chat_with_tools(client, messages, registry, confirm=ask_confirmation):
     tools = registry.ollama_tools()
     request = [{"role": "system", "content": TOOLS_SYSTEM_PROMPT}] + messages
@@ -180,8 +135,7 @@ def chat_with_tools(client, messages, registry, confirm=ask_confirmation):
         if content is None and not calls:
             return None
         if not calls and looks_like_tool_call(content):
-            # The model wrote a tool call as text (often for a tool that does
-            # not exist): ask again without tools to get a real answer
+            # Si le modèle écrit un appel d’outil comme du texte, on lui redemande une réponse sans outils.
             print("\n[MCP] appel d'outil écrit en texte, nouvelle réponse sans outil.")
             print("Sensai : ", end="", flush=True)
             content, _ = client.chat_with_tools(request, tools=None)
@@ -211,15 +165,12 @@ def chat_with_tools(client, messages, registry, confirm=ask_confirmation):
 
         print("Sensai : ", end="", flush=True)
 
-    # Too many rounds: one last call without tools forces a text answer
+    # Après trop d’appels, on demande une dernière réponse sans outils pour terminer.
     content, _ = client.chat_with_tools(request, tools=None)
     return content
 
 
-## @brief Start the MCP servers of the configuration, if enabled.
-#
-# @param config Configuration dictionary loaded from config.yaml.
-# @return A ToolRegistry, or None if MCP is disabled or no server started.
+# Cette fonction lance les serveurs MCP si l’option est activée et renvoie les outils disponibles.
 def load_registry(config):
     settings = (config or {}).get("mcp") or {}
     if not settings.get("enabled", False):

@@ -1,6 +1,4 @@
-## @file export.py
-# @brief Export a conversation or the stream report (X3): Markdown, JSON,
-# PDF and HTML, plus a no-auth share link served over HTTP.
+# Ce module exporte les conversations et rapports, puis peut les partager par une page HTTP sans authentification.
 
 import html
 import json
@@ -13,31 +11,28 @@ from pathlib import Path
 
 from fpdf import FPDF
 
-## @brief Export folder, anchored to the repository root regardless of the
-# directory the CLI is launched from.
+# Les exports sont enregistrés dans ce dossier du projet, quel que soit le dossier de lancement.
 EXPORT_DIR = Path(__file__).resolve().parents[2] / "exports"
-## @brief Unicode font used for the PDF when available (accents, quotes...).
+# Cette police permet d’afficher les accents et les caractères spéciaux dans les PDF.
 PDF_FONTS = (
     Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
     Path("C:/Windows/Fonts/arial.ttf"),
 )
-## @brief Display names of the roles of a conversation.
+# Ces noms rendent les rôles de conversation lisibles dans les exports.
 ROLE_NAMES = {
     "user": "Toi",
     "assistant": "Sensai",
     "system": "Système",
     "tool": "Outil",
 }
-## @brief Port of the share server when config.yaml does not give one.
+# Ce port est utilisé pour le partage si aucun autre n’est configuré.
 DEFAULT_SHARE_PORT = 8765
 
-## @brief Running share server, or None.
+# Cette variable contient le serveur de partage en cours, ou None.
 _server = None
 
 
-## @brief Help for the /export command.
-#
-# @return Help text describing usage and available formats.
+# Cette fonction explique les formats disponibles et l’utilisation de /export.
 def export_help() -> str:
     message = "Export function usage :\n" \
     "/export [format]         exporte la conversation\n" \
@@ -47,24 +42,14 @@ def export_help() -> str:
     return message
 
 
-## @brief Build the path of a new export file.
-#
-# @param stem Start of the file name ("SensaiChat", "StreamReport").
-# @param extension File extension, without the dot.
-# @return Timestamped path inside EXPORT_DIR (the folder is created).
+# Cette fonction prépare un nom de fichier daté dans le dossier des exports.
 def export_path(stem, extension):
     EXPORT_DIR.mkdir(exist_ok=True)
     name = datetime.now().strftime(f"{stem}_%Y-%m-%d_%H-%M-%S.{extension}")
     return EXPORT_DIR / name
 
 
-## @brief Turn a conversation into titled sections.
-#
-# Every exporter works on the same (title, body) list: a conversation and
-# the stream report are exported by the same code.
-#
-# @param messages Conversation history (list of "role"/"content" dicts).
-# @return List of (title, body) pairs, one per message.
+# Cette fonction transforme la conversation en sections pour réutiliser les mêmes exports que pour les rapports.
 def conversation_sections(messages):
     sections = []
     for message in messages:
@@ -80,12 +65,7 @@ def conversation_sections(messages):
     return sections
 
 
-## @brief Write titled sections to a Markdown file.
-#
-# @param title Title of the document.
-# @param sections List of (title, body) pairs.
-# @param stem Start of the file name.
-# @return Path of the created file.
+# Cette fonction écrit les sections du document dans un fichier Markdown.
 def write_md(title, sections, stem):
     path = export_path(stem, "md")
     text = f"# {title}\n\n_Exporté le {datetime.now().strftime('%d/%m/%Y %H:%M')}_\n\n"
@@ -94,16 +74,7 @@ def write_md(title, sections, stem):
     return path
 
 
-## @brief Write titled sections to a PDF file.
-#
-# A Unicode TrueType font is used when one is installed; otherwise the
-# built-in Helvetica only knows Latin-1, so other characters (emojis,
-# typographic quotes) are replaced instead of crashing the export.
-#
-# @param title Title of the document.
-# @param sections List of (title, body) pairs.
-# @param stem Start of the file name.
-# @return Path of the created file.
+# Cette fonction crée le PDF avec une police compatible si possible. Les caractères non pris en charge sont remplacés pour éviter un échec.
 def write_pdf(title, sections, stem):
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
@@ -143,15 +114,7 @@ def write_pdf(title, sections, stem):
     return path
 
 
-## @brief Write titled sections to a standalone HTML page.
-#
-# Every text is escaped: a message containing "<script>" is displayed, not
-# run, by whoever opens the shared link.
-#
-# @param title Title of the document.
-# @param sections List of (title, body) pairs.
-# @param stem Start of the file name.
-# @return Path of the created file.
+# Cette fonction crée une page HTML autonome et protège les textes pour qu’un message ne puisse pas exécuter du code.
 def write_html(title, sections, stem):
     blocks = "\n".join(
         f'<section><h2>{html.escape(heading)}</h2><p>{html.escape(body or "")}</p></section>'
@@ -185,14 +148,7 @@ p {{ margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }}
     return path
 
 
-## @brief Export titled sections to one format.
-#
-# @param format "md"/"markdown", "pdf", "json" or "html".
-# @param title Title of the document.
-# @param sections List of (title, body) pairs.
-# @param stem Start of the file name.
-# @param raw Data written as-is by the JSON export.
-# @return Confirmation or error message.
+# Cette fonction choisit le format d’export et renvoie le résultat de l’opération.
 def export_sections(format, title, sections, stem, raw):
     match format:
         case "md" | "markdown":
@@ -214,39 +170,25 @@ def export_sections(format, title, sections, stem, raw):
     return f"Export successful at '{path}'."
 
 
-## @brief Export the conversation to Markdown.
-#
-# @param messages Conversation history (list of "role"/"content" dicts).
-# @return Confirmation message showing the path of the created file.
+# Cette fonction exporte la conversation en Markdown et indique le fichier créé.
 def export_md(messages):
     return export_sections("md", "Sensai CLI Chat conversation", conversation_sections(messages),
                            "SensaiChat", messages)
 
 
-## @brief Export the conversation to PDF.
-#
-# @param messages Conversation history (list of "role"/"content" dicts).
-# @return Confirmation message showing the path of the created file.
+# Cette fonction exporte la conversation en PDF et indique le fichier créé.
 def export_pdf(messages):
     return export_sections("pdf", "Sensai CLI Chat conversation", conversation_sections(messages),
                            "SensaiChat", messages)
 
 
-## @brief Export the conversation to JSON, as sent to the model.
-#
-# @param messages Conversation history (list of "role"/"content" dicts).
-# @return Confirmation message showing the path of the created file.
+# Cette fonction exporte les échanges en JSON, dans le format utilisé par le modèle.
 def export_json(messages):
     return export_sections("json", "Sensai CLI Chat conversation", conversation_sections(messages),
                            "SensaiChat", messages)
 
 
-## @brief Address of this machine on the local network.
-#
-# No packet is sent: connecting a UDP socket only picks the outgoing
-# interface, whose address is then read.
-#
-# @return IP address, or "localhost" if there is no network.
+# Cette fonction retrouve l’adresse locale de la machine sans envoyer de paquet, ou utilise localhost si nécessaire.
 def local_ip():
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
@@ -256,27 +198,19 @@ def local_ip():
         return "localhost"
 
 
-## @brief Request handler that serves the exports folder, quietly.
+# Cette classe sert les fichiers exportés sans encombrer le terminal de messages.
 class QuietHandler(SimpleHTTPRequestHandler):
-    ## @brief Hide the request log, which would land in the middle of the chat.
+    # On masque le journal des requêtes pour ne pas interrompre l’affichage du chat.
     def log_message(self, format, *args):
         pass
 
-    ## @brief Never list the folder: only someone with the link sees a page.
+    # On interdit l’affichage du dossier pour ne pas exposer la liste des exports.
     def list_directory(self, path):
         self.send_error(404)
         return None
 
 
-## @brief Start the share server if it is not running yet.
-#
-# A plain read-only HTTP server on the exports folder, in a daemon thread:
-# no account, no auth, anyone who has the link (and can reach this machine)
-# can open the page. Directory listing is disabled and file names are
-# timestamped, so pages are not guessable by browsing.
-#
-# @param port Port to listen on.
-# @return Base URL of the server, or None if the port is taken.
+# Cette fonction lance le partage HTTP en lecture seule. Les fichiers sont accessibles aux personnes qui connaissent le lien et peuvent joindre la machine.
 def start_share_server(port=DEFAULT_SHARE_PORT):
     global _server
     if _server is None:
@@ -291,13 +225,7 @@ def start_share_server(port=DEFAULT_SHARE_PORT):
     return f"http://{local_ip()}:{_server.server_address[1]}"
 
 
-## @brief Publish a document as an HTML page and return its link.
-#
-# @param title Title of the page.
-# @param sections List of (title, body) pairs.
-# @param stem Start of the file name.
-# @param port Port of the share server.
-# @return Message with the link, or an error message.
+# Cette fonction exporte le document en HTML et renvoie son lien de partage.
 def share(title, sections, stem, port=DEFAULT_SHARE_PORT):
     path = write_html(title, sections, stem)
     base = start_share_server(port)

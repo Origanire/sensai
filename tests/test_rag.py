@@ -1,5 +1,4 @@
-## @file test_rag.py
-# @brief Unit tests of the RAG pipeline: chunking, storage, search (R1).
+# Ces tests vérifient le découpage, le stockage et la recherche documentaire.
 
 import unittest
 

@@ -1,13 +1,11 @@
-## @file memory.py
-# @brief Persistent memory of viewers: identity, history, profile,
-# summaries and statistics, in a local SQLite database.
+# Ce module conserve l’identité, les échanges, les faits et les statistiques des viewers dans SQLite.
 
 import sqlite3
 
-## @brief Tables from the former schema, indexed on the login name.
+# Ces anciennes tables utilisaient le pseudo comme identifiant.
 LEGACY_TABLES = ("viewer_messages", "viewer_facts", "viewer_summaries")
 
-## @brief Statistics columns added to the viewers table.
+# Ces colonnes ajoutent les statistiques aux profils des viewers.
 VIEWER_STATS_COLUMNS = (
     ("first_seen", "INTEGER"),
     ("last_seen", "INTEGER"),
@@ -17,13 +15,7 @@ VIEWER_STATS_COLUMNS = (
 )
 
 
-## @brief Set aside the tables of the old schema.
-#
-# The old tables were indexed on the login name, which a viewer can
-# change. They are renamed to *_v1 rather than deleted: nothing is lost,
-# and the new tables are created cleanly alongside.
-#
-# @param db_connection Open SQLite connection.
+# Cette fonction renomme les anciennes tables pour conserver leurs données avant de créer le nouveau format.
 def rename_legacy_tables(db_connection):
     for table in LEGACY_TABLES:
         columns = {
@@ -34,16 +26,7 @@ def rename_legacy_tables(db_connection):
     db_connection.commit()
 
 
-## @brief Add a column if it does not exist yet.
-#
-# CREATE TABLE IF NOT EXISTS never alters an existing table: without this
-# migration, a database created before the addition would stay incomplete.
-# The operation is idempotent.
-#
-# @param db_connection Open SQLite connection.
-# @param table Name of the table.
-# @param column Name of the column.
-# @param definition SQL type and constraints of the column.
+# Cette fonction ajoute une colonne uniquement si elle manque dans une base existante.
 def add_missing_column(db_connection, table, column, definition):
     columns = {
         row[1] for row in db_connection.execute(f"PRAGMA table_info({table})")
@@ -54,13 +37,12 @@ def add_missing_column(db_connection, table, column, definition):
         )
 
 
-## @brief Open the database and update the schema.
-#
-# @param path Path of the SQLite file.
-# @return Open SQLite connection.
+# Cette fonction ouvre la base et prépare les tables nécessaires à la mémoire.
 def init_memory(path="sensai.db"):
     db_connection = sqlite3.connect(path)
     rename_legacy_tables(db_connection)
+    from src.core.auto_memory import initialize
+    initialize(db_connection)
 
     db_connection.execute("""
         CREATE TABLE IF NOT EXISTS viewers (
@@ -100,16 +82,7 @@ def init_memory(path="sensai.db"):
     return db_connection
 
 
-## @brief Store or update a viewer's identity.
-#
-# The key is the Twitch identifier, which never changes. The login and
-# display name are refreshed on every visit: a viewer who renames
-# therefore keeps their whole memory.
-#
-# @param db_connection Open SQLite connection.
-# @param viewer_id Twitch identifier of the viewer.
-# @param login Login name, lowercase.
-# @param display_name Name as displayed in the chat.
+# Cette fonction enregistre l’identité du viewer avec son identifiant Twitch. Sa mémoire reste liée à lui même s’il change de pseudo.
 def remember_viewer(db_connection, viewer_id, login, display_name):
     db_connection.execute(
         "INSERT INTO viewers (viewer_id, login, display_name) VALUES (?, ?, ?) "
@@ -120,12 +93,7 @@ def remember_viewer(db_connection, viewer_id, login, display_name):
     db_connection.commit()
 
 
-## @brief Append a message to a viewer's history.
-#
-# @param db_connection Open SQLite connection.
-# @param viewer_id Twitch identifier of the viewer.
-# @param role "user" or "assistant".
-# @param content Text of the message.
+# Cette fonction ajoute un message à l’historique du viewer.
 def save_message(db_connection, viewer_id, role, content):
     db_connection.execute(
         "INSERT INTO viewer_messages (viewer_id, role, content) VALUES (?, ?, ?)",
@@ -134,13 +102,7 @@ def save_message(db_connection, viewer_id, role, content):
     db_connection.commit()
 
 
-## @brief Load a viewer's active history.
-#
-# Archived messages are excluded: they are already covered by the summary.
-#
-# @param db_connection Open SQLite connection.
-# @param viewer_id Twitch identifier of the viewer.
-# @return List of "role"/"content" dicts, in the format expected by Ollama.
+# Cette fonction charge les échanges encore actifs, sans reprendre ceux déjà archivés dans un résumé.
 def load_history(db_connection, viewer_id):
     rows = db_connection.execute(
         "SELECT role, content FROM viewer_messages "
@@ -150,11 +112,7 @@ def load_history(db_connection, viewer_id):
     return [{"role": role, "content": content} for role, content in rows]
 
 
-## @brief Add a fact to a viewer's profile.
-#
-# @param db_connection Open SQLite connection.
-# @param viewer_id Twitch identifier of the viewer.
-# @param fact Fact to remember.
+# Cette fonction ajoute un fait au profil du viewer.
 def save_fact(db_connection, viewer_id, fact):
     db_connection.execute(
         "INSERT INTO viewer_facts (viewer_id, fact) VALUES (?, ?)",
@@ -163,29 +121,17 @@ def save_fact(db_connection, viewer_id, fact):
     db_connection.commit()
 
 
-## @brief Load the facts known about a viewer.
-#
-# @param db_connection Open SQLite connection.
-# @param viewer_id Twitch identifier of the viewer.
-# @return List of facts, from oldest to most recent.
+# Cette fonction charge les faits manuels et les préférences automatiques encore utilisables du viewer.
 def load_facts(db_connection, viewer_id):
     rows = db_connection.execute(
         "SELECT fact FROM viewer_facts WHERE viewer_id = ? ORDER BY id",
         (viewer_id,),
     ).fetchall()
-    return [fact for (fact,) in rows]
+    from src.core.auto_memory import load_auto_facts
+    return [fact for (fact,) in rows] + load_auto_facts(db_connection, viewer_id)
 
 
-## @brief Save a summary and archive the messages it covers.
-#
-# Archiving is done on the SQL side, on the N oldest still-active
-# messages: the Python code therefore does not have to carry row
-# identifiers inside the history sent to the model.
-#
-# @param db_connection Open SQLite connection.
-# @param viewer_id Twitch identifier of the viewer.
-# @param summary Text of the summary.
-# @param archived_count Number of messages covered by this summary.
+# Cette fonction sauvegarde le résumé et archive les anciens messages qu’il remplace.
 def save_summary(db_connection, viewer_id, summary, archived_count):
     db_connection.execute(
         "INSERT INTO viewer_summaries (viewer_id, summary) VALUES (?, ?)",
@@ -202,11 +148,7 @@ def save_summary(db_connection, viewer_id, summary, archived_count):
     db_connection.commit()
 
 
-## @brief Load the latest known summary of a viewer.
-#
-# @param db_connection Open SQLite connection.
-# @param viewer_id Twitch identifier of the viewer.
-# @return Text of the summary, or None if the viewer has none yet.
+# Cette fonction récupère le dernier résumé disponible pour le viewer.
 def load_summary(db_connection, viewer_id):
     row = db_connection.execute(
         "SELECT summary FROM viewer_summaries WHERE viewer_id = ? "
@@ -216,11 +158,7 @@ def load_summary(db_connection, viewer_id):
     return row[0] if row else None
 
 
-## @brief Find a viewer's identifier from their name.
-#
-# @param db_connection Open SQLite connection.
-# @param login Name to look up, case-insensitive.
-# @return Twitch identifier, or None if this viewer has never written.
+# Cette fonction retrouve l’identifiant Twitch d’un viewer à partir de son pseudo.
 def find_viewer_id(db_connection, login):
     row = db_connection.execute(
         "SELECT viewer_id FROM viewers WHERE LOWER(login) = LOWER(?)",
@@ -229,17 +167,7 @@ def find_viewer_id(db_connection, login):
     return row[0] if row else None
 
 
-## @brief Add a session's activity to a viewer's totals.
-#
-# Called once per viewer, when the agent shuts down: the counters are
-# held in memory during the stream to avoid a disk write on every
-# message.
-#
-# @param db_connection Open SQLite connection.
-# @param viewer_id Twitch identifier of the viewer.
-# @param first_seen Timestamp of their first message of the session.
-# @param last_seen Timestamp of their last message of the session.
-# @param message_count Number of messages written during the session.
+# Cette fonction sauvegarde les statistiques de la session à l’arrêt du bot, pour limiter les écritures pendant le live.
 def add_activity(db_connection, viewer_id, first_seen, last_seen, message_count):
     db_connection.execute(
         "UPDATE viewers SET "
@@ -254,12 +182,7 @@ def add_activity(db_connection, viewer_id, first_seen, last_seen, message_count)
     db_connection.commit()
 
 
-## @brief Load a viewer's cumulative statistics.
-#
-# @param db_connection Open SQLite connection.
-# @param viewer_id Twitch identifier of the viewer.
-# @return Dict "visits", "message_count", "active_seconds", "first_seen",
-#         or None if the viewer is unknown.
+# Cette fonction récupère les statistiques cumulées d’un viewer connu.
 def load_stats(db_connection, viewer_id):
     row = db_connection.execute(
         "SELECT visits, message_count, active_seconds, first_seen "

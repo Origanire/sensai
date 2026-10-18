@@ -1,26 +1,15 @@
-## @file storage.py
-# @brief Storage and retrieval of embedded chunks in a local SQLite database.
-#
-# Chunks are grouped into collections ("documents" for the streamer's
-# knowledge base, "streams" for archived stream reports), so a search on
-# one never returns passages of the other.
+# Ce module stocke les passages et leurs vecteurs dans SQLite, en séparant les documents des anciens rapports de live.
 
 import sqlite3
 import json
 
-## @brief Collection of the documents ingested from the knowledge folder.
+# Cette collection regroupe les documents de la base de connaissances.
 DOCUMENTS = "documents"
-## @brief Collection of the archived stream reports.
+# Cette collection regroupe les rapports de live archivés.
 STREAMS = "streams"
 
 
-## @brief Open (or create) the SQLite database holding the chunks.
-#
-# Creates the "chunks" table if it does not exist yet, and adds the
-# "collection" column to a table created before it existed.
-#
-# @param path Path of the database file.
-# @return Open SQLite connection.
+# Cette fonction ouvre la base des passages et crée les tables ou colonnes manquantes.
 def init_db(path="sensai.db"):
     conn = sqlite3.connect(path, check_same_thread=False)
     cursor = conn.cursor()
@@ -44,15 +33,7 @@ def init_db(path="sensai.db"):
     return conn
 
 
-## @brief Save embedded chunks for a given source.
-#
-# The chunks previously stored for the same source are replaced: ingesting
-# a document twice, after editing it, never leaves duplicates.
-#
-# @param conn Open SQLite connection.
-# @param source Name of the source file.
-# @param embedded_chunks List of {"text", "embedding"} dicts.
-# @param collection Collection the chunks belong to.
+# Cette fonction remplace les passages d’une source pour éviter les doublons après une nouvelle indexation.
 def save_chunks(conn, source, embedded_chunks, collection=DOCUMENTS):
     cursor = conn.cursor()
     cursor.execute(
@@ -71,11 +52,7 @@ def save_chunks(conn, source, embedded_chunks, collection=DOCUMENTS):
     conn.commit()
 
 
-## @brief Load the chunks stored in the database.
-#
-# @param conn Open SQLite connection.
-# @param collection Collection to load, or None for every chunk.
-# @return List of {"id", "source", "text", "embedding", "collection"} dicts.
+# Cette fonction charge les passages enregistrés, avec un filtre de collection si nécessaire.
 def load_all_chunks(conn, collection=None):
     cursor = conn.cursor()
     if collection is None:
@@ -102,11 +79,7 @@ def load_all_chunks(conn, collection=None):
     return chunks
 
 
-## @brief Count the stored chunks.
-#
-# @param conn Open SQLite connection.
-# @param collection Collection to count, or None for every chunk.
-# @return Number of chunks.
+# Cette fonction compte les passages enregistrés dans la collection choisie.
 def count_chunks(conn, collection=None):
     cursor = conn.cursor()
     if collection is None:
@@ -116,11 +89,7 @@ def count_chunks(conn, collection=None):
     return cursor.fetchone()[0]
 
 
-## @brief List the sources of a collection with their number of chunks.
-#
-# @param conn Open SQLite connection.
-# @param collection Collection to describe.
-# @return List of (source, number of chunks) pairs, sorted by source.
+# Cette fonction liste les fichiers sources et leur nombre de passages.
 def list_sources(conn, collection=DOCUMENTS):
     return conn.execute(
         "SELECT source, COUNT(*) FROM chunks WHERE collection = ? "
