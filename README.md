@@ -55,6 +55,63 @@ si Twitch refuse le renouvellement, utilise Reconnecter Twitch. Une déconnexion
 IRC pendant le live nécessite un redémarrage manuel du bot. Le renouvellement
 suit la [documentation Twitch](https://dev.twitch.tv/docs/authentication/refresh-tokens/). L'import de documents et la veille planifiée restent en CLI.
 
+### Personnalité, modèle et longueur Twitch
+
+Modèle actif par défaut : **Qwen3 14B**, environ 9,3 Go à télécharger, testé sur
+un Mac de 24 Go de RAM. Contexte de 8 192 tokens, `think: false` pour des réponses
+directes. `.env` peut surcharger le choix avec `SENSAI_MODEL`.
+[Comparaison locale des modèles](doc/evaluations/social-2026-10-16/README.md).
+
+Le profil social de Lumi est défini dans `prompts/persona.txt` : réactions adaptées
+au message, humour léger, pas de relance automatique ni d'événement inventé.
+Le bot conserve en RAM au plus 12 messages publics filtrés, pendant 120 secondes,
+pour comprendre les échanges. Ce contexte disparaît à l'arrêt, reste séparé de
+la mémoire persistante des viewers et n'est pas envoyé au moteur de recherche.
+Les messages des viewers sont présentés comme des données, pas des instructions.
+
+Le mode **Naturelle** adapte la longueur à la question. Le code limite chaque
+message à 500 caractères, mention du viewer et liens compris ; il réserve une
+place à une source quand la réponse doit être raccourcie. L'essai privé réserve
+8 caractères pour une mention fictive `@Viewer `. Les tokens du modèle ne sont
+pas des caractères : la limite finale est donc appliquée séparément.
+Référence : [limite Twitch](https://dev.twitch.tv/docs/api/reference/#send-chat-message).
+
+Pour comparer les modèles avec 20 situations synthétiques sans publier sur Twitch :
+
+```bash
+.venv/bin/python -m tests.eval_social --model llama3.2 --output /tmp/social-3b.json
+.venv/bin/python -m tests.eval_social --model qwen3:14b --output /tmp/social-14b.json
+```
+
+Le benchmark teste génération et filtrage ; ses délais n'incluent pas le routeur,
+la recherche web ou Twitch. Il nécessite une lecture humaine des réponses : passer
+les tests de code ne prouve pas l'exactitude factuelle ou la qualité sociale.
+
+### Mode mascotte discrète
+
+Activé par défaut et désactivable dans **Pilotage**, ce mode autorise une courte
+réaction spontanée (180 caractères au plus) à un moment évoqué dans le chat.
+Il n'observe ni l'image ni le son du live. Le sujet et le contexte du dashboard
+restent la référence ; le streamer ou un modérateur peut signaler un événement
+avec `!event description`, ajouté au contexte temporaire après filtrage.
+
+Les réponses aux mentions gardent la priorité. Pour une intervention spontanée :
+au moins 3 minutes depuis le démarrage ou la dernière tentative, au moins 3 minutes
+depuis toute réponse du bot, 6 messages de 2 viewers depuis la dernière tentative,
+et un signal dans le message courant (gg, boss, encore mort, etc.) sont nécessaires.
+Le modèle peut refuser d'intervenir. Aucune relance sur minuterie dans un chat vide.
+L'espacement est réglable de 3 à 15 minutes. Les réponses directes restent sous la
+cadence générale ; les demandes pendant cette pause sont ignorées et maintenant
+signalées dans le journal. Les interventions spontanées ne créent pas de mémoire
+personnelle attribuée à un viewer.
+
+Les recherches utilisent maintenant le sujet du live pour résoudre une question
+comme « qui l'a développé ? ». `!search ...` fonctionne aussi dans l'essai privé
+et après une mention du bot. Le journal indique le début et la fin des recherches,
+leur indisponibilité et les sollicitations ignorées par la cadence. Le moteur web
+peut rester indisponible ; le sujet du live doit être correctement renseigné pour
+que les références implicites soient comprises.
+
 ### Conversation et recherche web
 
 Dans Twitch, adresse une question à `@LumiTheBoat`. Le routeur choisit la
@@ -117,7 +174,7 @@ curl -fsSL https://ollama.com/install.sh | sh
 ### 2. Télécharger les modèles utilisés par le projet
 
 ```bash
-ollama pull llama3.2   # modèle de conversation (chat, outils, routage)
+ollama pull qwen3:14b  # modèle de conversation (chat, outils, routage)
 ollama pull bge-m3     # modèle d'embeddings multilingue (RAG)
 ```
 
@@ -470,7 +527,7 @@ messages) : l'agent Chat importe l'interface de l'agent Internet
 ```
 viewer ──!search <question>──> Agent Chat ──ask_internet()──> Agent Internet ──DDGS──> web
                                    │   <──réponse + source (≤ 500 car.)──┘
-                                   ├──> chat Twitch (@viewer réponse... https://source)
+                                   ├──> chat Twitch (@viewer réponse sans hyperlien)
                                    └──get_quick_fact()──> Agent Internet
                                          └──fait court (≤ 160 car.)──> OBS : source Texte « SensaiOverlay »
 ```
@@ -620,3 +677,39 @@ systemctl status ollama
 - ColoMiel
 - Origanire
 - Hexoneer
+
+
+## Assistant de chaîne et écoute vocale
+
+- Une mention seule, y compris `@LumiTheBoat !?`, répond « Que me veux-tu ? 😄 » sans appel au modèle. La cadence générale reste applicable.
+- Aucune URL n’est envoyée dans le chat : filtrage final commun aux conversations, recherches, commandes et réactions. La recherche consulte toujours ses sources en interne.
+- La chaîne suivie est explicitement incluse dans le contexte. Les mémoires sont désormais dans `data/channels/<chaîne>/viewers.db`. L’ancienne base globale est conservée, mais ses échanges ne sont pas automatiquement attribués à une chaîne.
+- Le changement de chaîne restaure son sujet et son contexte depuis `config/channel-contexts.yaml`, ou les vide si elle est nouvelle. Enregistre le changement puis vérifie l’onglet Contexte. La FAQ globale d’exemple n’est plus utilisée comme preuve sur une chaîne Twitch ; renseigne les informations utiles dans le dashboard.
+- Les réponses déjà envoyées sont incluses dans le contexte court pour réduire les répétitions. La lecture IRC se poursuit pendant les générations (PING/PONG), avec une file bornée et expiration des messages de plus de 45 secondes.
+
+Installation vocale optionnelle : `.venv/bin/pip install -r requirements-audio.txt`.
+Dans Pilotage, active **Écouter le son de la chaîne suivie**, choisis le mot d’appel (par défaut **Lumi**) et enregistre. L’activation/désactivation est prise en compte même si le chat est silencieux. L’arrêt du bot coupe aussi les processus audio.
+
+Streamlink lit le son public de la chaîne configurée ; FFmpeg le transforme en PCM et faster-whisper (`small`, CPU int8, 4 threads) transcrit localement en français. Le premier lancement télécharge le modèle. Séquences de 12 secondes, auxquelles s’ajoutent le délai Twitch et celui de transcription. Pas de microphone ouvert, pas de fichier audio ni de transcription sauvegardés. Le journal indique l’état, sans reproduire les paroles. Hors ligne ou inaccessible, l’audio réessaie périodiquement ; le chat reste indépendant.
+
+Les paroles sans mot d’appel deviennent du contexte temporaire (deux minutes maximum). « Lumi, qui a développé ce jeu ? » peut déclencher une recherche et une réponse écrite dans le chat. Minimum 15 secondes entre demandes vocales, en plus de la cadence générale. Une file audio courte rejette les transcriptions périmées. Aucune commande de modération ou de mémoire n’est exécutée depuis le son.
+
+**Limites** : le flux mélange streamer, invités, jeu, musique et éventuelles publicités. Il n’identifie pas les locuteurs et peut mal transcrire ou manquer une phrase coupée entre deux séquences. Un mot d’appel dans le jeu ou une autre voix peut déclencher une réponse. L’écoute ne constitue pas une authentification du streamer, ni une analyse vidéo. Pour désactiver les réactions vocales, coupe l’écoute dans le dashboard.
+
+Références d’intégration : [Streamlink](https://streamlink.github.io/cli.html), [faster-whisper](https://github.com/SYSTRAN/faster-whisper).
+
+### Questionnaire du streamer et FAQ locale
+
+Dans **Contexte → Fais connaissance avec Lumi**, huit questions constituent la fiche de chaque chaîne : présentation, ambiance, jeux habituels, horaires, règles, matériel, limites et rituels. Le questionnaire s’affiche à l’ouverture si la fiche est vide ; il reste modifiable avant les lives. Il s’adresse au streamer qui configure le dashboard, pas aux viewers à leur arrivée.
+
+Les réponses sont enregistrées dans la table `streamer_profile` de `data/channels/<chaîne>/viewers.db`. Une FAQ initiale, éditable séparément, est dans `channel_faq`. La fiche confirmée complète et prime sur les champs inconnus de la FAQ. Les deux sont injectées dans le contexte des conversations et des essais privés ; aucune installation d’embeddings n’est nécessaire pour cette petite base. Le sujet du live reste dans les réglages, afin de ne pas figer un jeu dans la FAQ.
+
+Les compteurs de mémoire du dashboard lisent réellement SQLite. Les échanges adressés à Lumi sont persistants et rechargés par identifiant Twitch ; `!remember pseudo fait` ajoute un fait explicite (streamer/modérateurs). Le contexte ambiant, les transcriptions et les essais privés ne deviennent pas des historiques individuels. Les anciennes données globales restent conservées sans attribution automatique à une chaîne.
+
+### Souvenirs automatiques des viewers
+
+L’option **Contexte → Mémoire des viewers → Retenir automatiquement les préférences de jeu** analyse aussi les messages sans mention. Un préfiltre détecte les déclarations personnelles, puis le modèle valide une citation explicite : jeu préféré, personnage principal ou préférence de jeu. Le code vérifie la citation, filtre les données personnelles et limite l’extraction à une tentative toutes les dix secondes, pour tout le chat. Une déclaration peut donc ne pas être traitée pendant ce délai ; le modèle peut aussi choisir de ne rien retenir.
+
+Trois catégories maximum sont enregistrées par identifiant Twitch dans `viewer_auto_facts`, dans la base de la chaîne. Une nouvelle déclaration dans la même catégorie remplace la précédente ; un doublon réactualise sa date. Les préférences de plus de 90 jours ne sont plus injectées dans les réponses. Les faits ajoutés manuellement restent séparés. L’extraction ne reçoit ni paroles du live, ni essais privés, ni messages du compte bot. Aucune annonce automatique n’est publiée dans le chat ; le journal du dashboard indique un nouvel apprentissage sans exposer son contenu.
+
+Désactiver l’option arrête les nouvelles extractions, sans supprimer les souvenirs existants. Cette classification est prudente mais imparfaite : ironie, formulations ambiguës et préférences multiples peuvent être ignorées ou mal classées.
