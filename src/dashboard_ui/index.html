@@ -55,6 +55,7 @@
               <div class="ls-chat-line ls-chat-reply" aria-live="polite"><strong>LumiTheBoat <span class="ls-tag">BOT</span></strong><p id="ls-answer">Écris un message pour tester le contexte et le ton des réponses.</p></div>
               <label class="ls-field" for="ls-message">Message d’essai<input id="ls-message" value="@LumiTheBoat salut !" maxlength="200" autocomplete="off"></label>
               <button class="cursor-interaction" id="ls-simulate" style="margin-top:12px;width:100%">Tester avec le modèle</button>
+              <details><summary>Requêtes exactes de cet essai vers Ollama</summary><p class="ls-muted">Messages et paramètres capturés au moment de l’envoi, après les filtres. Essai privé uniquement, sans historique des viewers. Une tentative réseau peut échouer après capture.</p><pre id="model-requests" style="white-space:pre-wrap;overflow-wrap:anywhere;max-height:420px;overflow:auto">Aucun essai effectué.</pre></details>
               <p class="ls-muted" style="margin-top:12px">Cet essai appelle Ollama, sans modifier la mémoire des viewers. Limite : 500 caractères, dont 8 réservés à une mention fictive.</p>
             </section>
             <section class="ls-panel">
@@ -70,7 +71,12 @@
         <div class="ls-grid">
           <section class="ls-panel">
             <div class="ls-panel-head"><h2>Contexte du stream</h2></div>
-            <label class="ls-field" for="ls-game">Jeu ou sujet du jour<input id="ls-game" placeholder="Ex. : découverte d’un jeu, discussion…" maxlength="100"></label>
+            <h3>Informations Twitch synchronisées</h3>
+            <p class="ls-muted" id="live-context-status" aria-live="polite">Lecture du contexte Twitch…</p>
+            <div class="ls-summary-list"><div><span>Catégorie</span><strong id="live-context-game">—</strong></div><div><span>Titre</span><strong id="live-context-title">—</strong></div></div>
+            <p id="live-context-bio" class="ls-muted"></p><p id="live-context-tags" class="ls-muted"></p>
+            <p class="ls-muted">Actualisation automatique chaque minute. Les nouvelles informations remplacent la mémoire Twitch de cette chaîne. Ta fiche manuelle reste conservée ; la catégorie Twitch récente prime pour le jeu du live.</p>
+            <label class="ls-field" for="ls-game">Sujet manuel (simulation locale)<input id="ls-game" placeholder="Ex. : découverte d’un jeu, discussion…" maxlength="100"></label>
             <label class="ls-field" for="ls-context">Informations à connaître<textarea id="ls-context" placeholder="Objectif du live, règles de chat, informations confirmées…" maxlength="2500"></textarea></label>
             <div class="ls-field-pair"><label class="ls-field" for="ls-tone">Ton des réponses<select id="ls-tone"><option value="friendly">Amical et naturel</option><option value="calm">Calme et discret</option><option value="energetic">Enthousiaste</option></select></label><label class="ls-field" for="ls-length">Longueur souhaitée<select id="ls-length"><option value="adaptive">Naturelle · jusqu’à 500 caractères</option><option value="short">Une ou deux phrases</option><option value="brief">Une phrase courte</option></select></label></div>
             <label class="ls-check"><input type="checkbox" checked id="ls-spoilers"> Éviter les spoilers</label>

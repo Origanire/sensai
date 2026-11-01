@@ -73,13 +73,17 @@ def test_search_command_reports_real_research_and_passes_topic():
 def test_preview_understands_mention_search_and_topic(tmp_path):
     import shutil
     from src.dashboard import BotController
-    from src.core.bot_settings import ROOT
+    from src.core.bot_settings import ROOT, load_bot_settings
     (tmp_path/'config').mkdir()
     shutil.copyfile(ROOT/'config/chat_agent.yaml',tmp_path/'config/chat_agent.yaml')
     shutil.copyfile(ROOT/'config.yaml',tmp_path/'config.yaml')
     controller=BotController(tmp_path)
+    from src.core.twitch_context import save_context
+    import time
+    save_context({'channel': load_bot_settings(tmp_path)['channel'], 'game_name': 'Hades',
+                  'is_live': True, 'fetched_at': time.time()}, tmp_path)
     with patch('src.dashboard.OllamaClient',return_value=FakeClient()), patch('src.dashboard.ask_internet',return_value='Trouvé. https://example.org') as search:
         result=controller.preview({'message':'@LumiTheBoat !search qui a développé ce jeu ?', 'settings':{'stream_topic':'Nine Sols'}})
     assert result['route']=='web'
     assert search.call_args.args[0]=='qui a développé ce jeu ?'
-    assert search.call_args.kwargs['topic']=='Nine Sols'
+    assert search.call_args.kwargs['topic']=='Hades'

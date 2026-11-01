@@ -13,6 +13,7 @@ def strip_links(text):
     text = LINK.sub("", text)
     text = re.sub(r"(?:[·|—-]\s*)?(?:Sources?|Résultat consulté)\s*:\s*$", "", text, flags=re.I)
     text = text.replace("**", "").replace("`", "")
+    text = re.sub(r"\*([^*\n]+)\*", r"\1", text)
     text = re.sub(r"\s+([.,])", r"\1", text)
     return " ".join(text.split()).strip(" ·|")
 
@@ -22,3 +23,12 @@ def fit_chat_text(text, limit=MAX_CHAT_CHARACTERS):
     if not text:
         text = "Je n’ai pas de réponse utile à ajouter pour le moment."
     return text if len(text) <= limit else textwrap.shorten(text, limit, placeholder="…")
+
+
+def viewer_reply(text, display_name):
+    """Le transport ajoute le ping : retire ceux produits par le modèle, même collés."""
+    text = text.strip()
+    prefix = re.compile(r"^@" + re.escape(display_name), re.I)
+    while prefix.match(text):
+        text = prefix.sub("", text, count=1).lstrip(" \t\n,:;–—-")
+    return fit_chat_text(text, MAX_CHAT_CHARACTERS - len(display_name) - 2)

@@ -1,6 +1,7 @@
 # Ce module communique avec Ollama pour les réponses, les outils, le JSON et les vecteurs de recherche.
 
 import json
+import copy
 import os
 
 import requests
@@ -44,6 +45,8 @@ class OllamaClient:
         self.last_prompt_tokens = None
         # On conserve le nombre de tokens générés lors du dernier appel.
         self.last_response_tokens = None
+        self.capture_requests = False
+        self.sent_requests = []
 
     # Cette fonction prépare les options envoyées au modèle pour chaque réponse.
     def _options(self, temperature=None):
@@ -58,6 +61,9 @@ class OllamaClient:
     def _post_chat(self, payload, stream):
         if self.think is not None:
             payload["think"] = self.think
+        if self.capture_requests:
+            self.sent_requests.append(copy.deepcopy(payload))
+            self.sent_requests = self.sent_requests[-10:]
         try:
             response = requests.post(
                 f"{self.url}/api/chat",

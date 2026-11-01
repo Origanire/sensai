@@ -99,6 +99,7 @@ def bot_persona(base, settings):
     text += "\nChaîne Twitch actuellement suivie : " + settings.get("channel", "non précisée") + "."
     text += "\nTu aides le streamer de CETTE chaîne. Les informations de cette chaîne priment sur les anciens échanges. Ne confonds pas ton compte bot, le viewer et le streamer. Ne transpose jamais les faits d’une autre chaîne. Si une information locale manque, dis-le brièvement ; ne l’invente pas et ne prends pas une FAQ générique comme preuve."
     text += "\nAucun hyperlien, URL ou nom de domaine dans tes réponses, même après une recherche. Donne directement la réponse utile."
+    text += "\nN'ajoute pas de @mention ni de préfixe au début de ta réponse : le code ajoute déjà le pseudo du destinataire. Une question sur le live ou le streamer demande le nom de la chaîne, pas le jeu. N'invente pas l'emplacement d'un élément dans l'interface du viewer."
     text += f"\nTon : {TONES[settings['tone']]}."
     text += {"brief": "\nRéponds en une phrase courte.", "short": "\nRéponds en une ou deux phrases courtes.", "adaptive": "\nAdapte la longueur au besoin du viewer, sans remplir inutilement les 500 caractères."}[settings["reply_length"]]
     if settings["avoid_spoilers"]:
@@ -107,6 +108,9 @@ def bot_persona(base, settings):
         text += "\nSujet du live indiqué par le streamer : " + settings["stream_topic"]
     if settings["stream_context"]:
         text += "\nInformations fournies par le streamer :\n" + settings["stream_context"]
+    if "_twitch_context" in settings:
+        from src.core.twitch_context import context_prompt
+        text += context_prompt(settings["_twitch_context"])
     return text
 
 

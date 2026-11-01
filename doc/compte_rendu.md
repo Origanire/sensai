@@ -1,3 +1,5 @@
+> Document historique : pour le périmètre actuel, les écarts OBS/RAG et les preuves du 1er novembre 2026, consulter [le complément de soutenance](defense.md).
+
 # Compte rendu : ce qui a été ajouté, comment ça marche, comment le tester
 
 Ce document explique chaque fonctionnalité ajoutée ou terminée, puis comment la

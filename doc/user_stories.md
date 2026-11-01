@@ -347,3 +347,23 @@ Acceptance criteria:
   (route `chat`, report unchanged).
 - The unit tests (`python -m unittest discover -s tests -t .`) cover the
   invalid-type and empty-content cases.
+
+## Complément évalué au 1er novembre 2026
+
+Les critères ci-dessous décrivent la version actuelle. Les sections historiques
+ci-dessus restent le brief initial ; voir les écarts dans `defense.md`.
+
+| ID | User story | Critères d'acceptation observables | Preuve |
+|---|---|---|---|
+| US-DASH | En tant que streamer débutant, je veux piloter Lumi sans terminal pendant le live afin de rester concentré sur mon audience. | Démarrer/arrêter un seul bot ; modifier le rythme ; refuser un changement de chaîne pendant son fonctionnement ; essai privé sans message Twitch. | `tests/test_dashboard.py`, écran Pilotage |
+| US-MASC | En tant que streamer, je veux une mascotte qui réagit avec parcimonie afin d'animer les silences sans monopoliser le chat. | Option désactivable ; intervalle de 180 à 900 secondes ; activité de plusieurs participants nécessaire ; aucune prétention à voir la vidéo. | `tests/test_mascot.py`, `src/agents/mascot.py` |
+| US-AUDIO | En tant que streamer, je veux interpeller Lumi oralement afin de poser une question sans quitter mon jeu. | Option d'écoute ; mot d'appel ; transcription française ; réponse écrite ; paroles sans appel en contexte temporaire ; aucune commande privilégiée exécutée depuis l'audio. | `tests/test_live_assistant.py`, `src/tools/live_audio.py` |
+| US-AUTO | En tant que viewer régulier, je veux que mes préférences de jeu explicitement déclarées soient retenues afin de retrouver une conversation personnalisée. | Trois catégories maximum ; citation exacte ; correction remplace la valeur ; expiration d'usage après 90 jours ; option désactivable ; ni données sensibles ni faits sur autrui. | `tests/test_auto_memory.py` |
+| US-SYNC | En tant que viewer, je veux que Lumi connaisse la chaîne et la catégorie actuelles afin de ne pas recevoir des réponses sur un ancien live. | Lecture Twitch périodique ; stockage par chaîne ; fraîcheur limitée ; statut hors ligne distinct ; un titre ne devient pas une scène inventée. | `tests/test_twitch_context.py` |
+| US-PROMPT | En tant qu'évaluateur, je veux inspecter la requête exacte d'un essai afin de vérifier l'ordre du contexte et les paramètres réellement transmis. | Panneau JSON des requêtes `/api/chat` de l'essai privé ; capture après ajout de `think` ; aucun appel indiqué pour les réponses déterministes ; pas de secrets OAuth ni d'historique viewer dans cet essai. | `tests/test_prompt_trace.py`, écran Pilotage |
+
+Corrections du brief initial : les réponses web Twitch ne contiennent désormais
+aucune URL ; les sources servent à la synthèse interne. M1 conserve les échanges
+adressés au bot, tandis que US-AUTO peut extraire des préférences dans des messages
+non adressés au bot. R1 dans le bot utilise maintenant la FAQ et la fiche **de la
+chaîne**, et non la FAQ globale d'exemple de la CLI.

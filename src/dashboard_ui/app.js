@@ -84,6 +84,16 @@
   }
   function displayState(state) {
     latest=state;
+    const live=state.live_context;
+    if(live){
+      const data=live.data;
+      const when=data?new Date(data.fetched_at*1000).toLocaleTimeString('fr-FR'):'';
+      $('live-context-status').textContent=(data?(live.fresh?(data.is_live?'En direct':'Hors ligne'):'Informations anciennes')+' · Vérifié à '+when:'Contexte pas encore vérifié')+(live.syncing?' · Actualisation…':'')+(live.error?' · '+live.error:'');
+      $('live-context-game').textContent=data?.game_name?data.game_name+(!live.fresh||!data.is_live?' (dernière catégorie connue)':''):'Non renseignée';
+      $('live-context-title').textContent=data?.title?data.title+(!live.fresh||!data.is_live?' (dernier titre connu)':''):'Non renseigné';
+      $('live-context-bio').textContent='Bio Twitch : '+(data?.description || 'Non renseignée');
+      $('live-context-tags').textContent='Tags : '+(data?.tags?.join(', ') || 'Non renseignés');
+    }
     if(!initialized){fillSettings(state.settings);initialized=true;}
     const active=['checking','starting','running','stopping'].includes(state.phase);
     $('ls-pause-text').textContent=active?'Arrêter le bot':'Démarrer le bot';
@@ -199,8 +209,9 @@
   $('connect-account').addEventListener('click',()=>action(async()=>{await api('/api/auth',{});}));
   $('ls-simulate').addEventListener('click',async()=>{
     $('ls-simulate').disabled=true;error('');$('ls-answer').textContent='Lumi prépare sa réponse…';$('ls-viewer-text').textContent=$('ls-message').value;
-    try{const response=await api('/api/preview',{message:$('ls-message').value,settings:settings()});$('ls-answer').textContent=response.reply;$('ls-sim-status').textContent='Essai privé · '+(response.route==='web'?'Recherche web · ':'Conversation · ')+response.seconds+' s'+(response.blocked?' · filtré':'');}
-    catch(err){$('ls-answer').textContent='Essai interrompu.';error(err.message || 'Connexion impossible.');}
+    $('model-requests').textContent='Essai en cours…';
+    try{const response=await api('/api/preview',{message:$('ls-message').value,settings:settings()});$('ls-answer').textContent=response.reply;$('ls-sim-status').textContent='Essai privé · '+(response.route==='web'?'Recherche web · ':'Conversation · ')+response.seconds+' s'+(response.blocked?' · filtré':'');$('model-requests').textContent=response.model_requests?.length?JSON.stringify(response.model_requests,null,2):'Aucun appel au modèle pour cette réponse (règle déterministe ou filtre).';}
+    catch(err){$('ls-answer').textContent='Essai interrompu.';$('model-requests').textContent='Essai échoué : trace non disponible.';error(err.message || 'Connexion impossible.');}
     finally{$('ls-simulate').disabled=false;}
   });
   $('ls-report').addEventListener('click',loadReport);

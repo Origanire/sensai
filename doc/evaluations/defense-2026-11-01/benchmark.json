@@ -1,0 +1,575 @@
+{
+  "hardware": {
+    "ram_bytes": "25769803776",
+    "model": "Mac17,9",
+    "cpu": "Apple M5 Pro"
+  },
+  "models": {
+    "models": [
+      {
+        "name": "qwen3-vl:8b-instruct",
+        "model": "qwen3-vl:8b-instruct",
+        "modified_at": "2026-10-23T17:57:33.289817907+02:00",
+        "size": 6190971795,
+        "digest": "70e58e37beb15464e19aa903dedb2cba828b89c0fb186f75ff2738c7347b96eb",
+        "details": {
+          "parent_model": "dhiltgen/qwen3-vl:8b-instruct-q4_K_M-llamacpp",
+          "format": "gguf",
+          "family": "qwen3vl",
+          "families": [
+            "qwen3vl",
+            "clip"
+          ],
+          "parameter_size": "8.2B",
+          "quantization_level": "Q4_K_M",
+          "context_length": 262144,
+          "embedding_length": 4096
+        },
+        "capabilities": [
+          "completion",
+          "vision",
+          "tools"
+        ]
+      },
+      {
+        "name": "ministral-3:14b",
+        "model": "ministral-3:14b",
+        "modified_at": "2026-10-20T22:46:02.008296841+02:00",
+        "size": 9082537546,
+        "digest": "4760c35aeb9d9e9c6174c2492562c0b999e80a222804fd96b1915ab72bbcdcf7",
+        "details": {
+          "parent_model": "",
+          "format": "gguf",
+          "family": "mistral3",
+          "families": [
+            "mistral3"
+          ],
+          "parameter_size": "13.9B",
+          "quantization_level": "Q4_K_M",
+          "context_length": 262144,
+          "embedding_length": 5120
+        },
+        "capabilities": [
+          "completion",
+          "vision",
+          "tools"
+        ]
+      },
+      {
+        "name": "qwen3:14b",
+        "model": "qwen3:14b",
+        "modified_at": "2026-10-16T12:09:16.894660497+02:00",
+        "size": 9276198565,
+        "digest": "bdbd181c33f2ed1b31c972991882db3cf4d192569092138a7d29e973cd9debe8",
+        "details": {
+          "parent_model": "",
+          "format": "gguf",
+          "family": "qwen3",
+          "families": [
+            "qwen3"
+          ],
+          "parameter_size": "14.8B",
+          "quantization_level": "Q4_K_M",
+          "context_length": 40960,
+          "embedding_length": 5120
+        },
+        "capabilities": [
+          "completion",
+          "tools",
+          "thinking"
+        ]
+      },
+      {
+        "name": "llama3.2:latest",
+        "model": "llama3.2:latest",
+        "modified_at": "2026-10-13T13:52:53.864665237+02:00",
+        "size": 2019393189,
+        "digest": "a80c4f17acd55265feec403c7aef86be0c25983ab279d83f3bcd3abbcb5b8b72",
+        "details": {
+          "parent_model": "",
+          "format": "gguf",
+          "family": "llama",
+          "families": [
+            "llama"
+          ],
+          "parameter_size": "3.2B",
+          "quantization_level": "Q4_K_M",
+          "context_length": 131072,
+          "embedding_length": 3072
+        },
+        "capabilities": [
+          "completion",
+          "tools"
+        ]
+      },
+      {
+        "name": "qwen3:4b",
+        "model": "qwen3:4b",
+        "modified_at": "2026-09-30T13:58:11.891831152+02:00",
+        "size": 2497293931,
+        "digest": "359d7dd4bcdab3d86b87d73ac27966f4dbb9f5efdfcc75d34a8764a09474fae7",
+        "details": {
+          "parent_model": "",
+          "format": "gguf",
+          "family": "qwen3",
+          "families": [
+            "qwen3"
+          ],
+          "parameter_size": "4.0B",
+          "quantization_level": "Q4_K_M",
+          "context_length": 262144,
+          "embedding_length": 2560
+        },
+        "capabilities": [
+          "completion",
+          "tools",
+          "thinking"
+        ]
+      }
+    ]
+  },
+  "runs": [
+    {
+      "request": {
+        "model": "llama3.2:latest",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Un viewer dit : encore mort au même boss. Réponds avec une seule courte phrase complice, sans inventer le jeu ni le nombre de tentatives."
+          }
+        ],
+        "stream": false,
+        "think": false,
+        "keep_alive": "2m",
+        "options": {
+          "temperature": 0.3,
+          "seed": 42,
+          "num_ctx": 8192,
+          "num_predict": 32
+        }
+      },
+      "seconds": 1.5203722089063376,
+      "response": {
+        "model": "llama3.2:latest",
+        "created_at": "2026-11-01T13:23:54.514315Z",
+        "message": {
+          "role": "assistant",
+          "content": "Je suis désolé pour toi, on va essayer de changer de boulot !"
+        },
+        "done": true,
+        "done_reason": "stop",
+        "total_duration": 1514914000,
+        "load_duration": 1296029417,
+        "prompt_eval_count": 58,
+        "prompt_eval_cached_count": 0,
+        "prompt_eval_duration": 49685000,
+        "eval_count": 19,
+        "eval_duration": 163596000
+      },
+      "loaded_models": {
+        "models": [
+          {
+            "name": "llama3.2:latest",
+            "model": "llama3.2:latest",
+            "size": 3093687172,
+            "digest": "a80c4f17acd55265feec403c7aef86be0c25983ab279d83f3bcd3abbcb5b8b72",
+            "details": {
+              "parent_model": "",
+              "format": "gguf",
+              "family": "llama",
+              "families": [
+                "llama"
+              ],
+              "parameter_size": "3.2B",
+              "quantization_level": "Q4_K_M"
+            },
+            "expires_at": "2026-11-01T14:25:54.51471+01:00",
+            "size_vram": 3093687172,
+            "context_length": 8192
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "model": "llama3.2:latest",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Un viewer dit : encore mort au même boss. Réponds avec une seule courte phrase complice, sans inventer le jeu ni le nombre de tentatives."
+          }
+        ],
+        "stream": false,
+        "think": false,
+        "keep_alive": "2m",
+        "options": {
+          "temperature": 0.3,
+          "seed": 42,
+          "num_ctx": 8192,
+          "num_predict": 128
+        }
+      },
+      "seconds": 0.17561949999071658,
+      "response": {
+        "model": "llama3.2:latest",
+        "created_at": "2026-11-01T13:23:54.703803Z",
+        "message": {
+          "role": "assistant",
+          "content": "Je suis désolé pour toi, on va essayer de changer de boulot !"
+        },
+        "done": true,
+        "done_reason": "stop",
+        "total_duration": 173059208,
+        "load_duration": 1200416,
+        "prompt_eval_count": 58,
+        "prompt_eval_cached_count": 57,
+        "prompt_eval_duration": 9745000,
+        "eval_count": 19,
+        "eval_duration": 160784000
+      },
+      "loaded_models": {
+        "models": [
+          {
+            "name": "llama3.2:latest",
+            "model": "llama3.2:latest",
+            "size": 3093687172,
+            "digest": "a80c4f17acd55265feec403c7aef86be0c25983ab279d83f3bcd3abbcb5b8b72",
+            "details": {
+              "parent_model": "",
+              "format": "gguf",
+              "family": "llama",
+              "families": [
+                "llama"
+              ],
+              "parameter_size": "3.2B",
+              "quantization_level": "Q4_K_M"
+            },
+            "expires_at": "2026-11-01T14:25:54.703872+01:00",
+            "size_vram": 3093687172,
+            "context_length": 8192
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "model": "qwen3:14b",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Un viewer dit : encore mort au même boss. Réponds avec une seule courte phrase complice, sans inventer le jeu ni le nombre de tentatives."
+          }
+        ],
+        "stream": false,
+        "think": false,
+        "keep_alive": "2m",
+        "options": {
+          "temperature": 0.3,
+          "seed": 42,
+          "num_ctx": 8192,
+          "num_predict": 32
+        }
+      },
+      "seconds": 4.728339749854058,
+      "response": {
+        "model": "qwen3:14b",
+        "created_at": "2026-11-01T13:23:59.427854Z",
+        "message": {
+          "role": "assistant",
+          "content": "Tu as raison, mais cette fois, c'est différent."
+        },
+        "done": true,
+        "done_reason": "stop",
+        "total_duration": 4720331792,
+        "load_duration": 4114885625,
+        "prompt_eval_count": 49,
+        "prompt_eval_cached_count": 0,
+        "prompt_eval_duration": 183516000,
+        "eval_count": 13,
+        "eval_duration": 412736000
+      },
+      "loaded_models": {
+        "models": [
+          {
+            "name": "qwen3:14b",
+            "model": "qwen3:14b",
+            "size": 10311151123,
+            "digest": "bdbd181c33f2ed1b31c972991882db3cf4d192569092138a7d29e973cd9debe8",
+            "details": {
+              "parent_model": "",
+              "format": "gguf",
+              "family": "qwen3",
+              "families": [
+                "qwen3"
+              ],
+              "parameter_size": "14.8B",
+              "quantization_level": "Q4_K_M"
+            },
+            "expires_at": "2026-11-01T14:25:59.429231+01:00",
+            "size_vram": 10311151123,
+            "context_length": 8192
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "model": "qwen3:14b",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Un viewer dit : encore mort au même boss. Réponds avec une seule courte phrase complice, sans inventer le jeu ni le nombre de tentatives."
+          }
+        ],
+        "stream": false,
+        "think": false,
+        "keep_alive": "2m",
+        "options": {
+          "temperature": 0.3,
+          "seed": 42,
+          "num_ctx": 8192,
+          "num_predict": 128
+        }
+      },
+      "seconds": 0.4552067080512643,
+      "response": {
+        "model": "qwen3:14b",
+        "created_at": "2026-11-01T13:23:59.898171Z",
+        "message": {
+          "role": "assistant",
+          "content": "Tu as raison, mais cette fois, c'est différent."
+        },
+        "done": true,
+        "done_reason": "stop",
+        "total_duration": 453312125,
+        "load_duration": 5843542,
+        "prompt_eval_count": 49,
+        "prompt_eval_cached_count": 48,
+        "prompt_eval_duration": 33949000,
+        "eval_count": 13,
+        "eval_duration": 412549000
+      },
+      "loaded_models": {
+        "models": [
+          {
+            "name": "qwen3:14b",
+            "model": "qwen3:14b",
+            "size": 10311151123,
+            "digest": "bdbd181c33f2ed1b31c972991882db3cf4d192569092138a7d29e973cd9debe8",
+            "details": {
+              "parent_model": "",
+              "format": "gguf",
+              "family": "qwen3",
+              "families": [
+                "qwen3"
+              ],
+              "parameter_size": "14.8B",
+              "quantization_level": "Q4_K_M"
+            },
+            "expires_at": "2026-11-01T14:25:59.898234+01:00",
+            "size_vram": 10311151123,
+            "context_length": 8192
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "model": "ministral-3:14b",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Un viewer dit : encore mort au même boss. Réponds avec une seule courte phrase complice, sans inventer le jeu ni le nombre de tentatives."
+          }
+        ],
+        "stream": false,
+        "think": false,
+        "keep_alive": "2m",
+        "options": {
+          "temperature": 0.3,
+          "seed": 42,
+          "num_ctx": 8192,
+          "num_predict": 32
+        }
+      },
+      "seconds": 4.162452332908288,
+      "response": {
+        "model": "ministral-3:14b",
+        "created_at": "2026-11-01T13:24:04.062748Z",
+        "message": {
+          "role": "assistant",
+          "content": "*\"On va lui faire payer en double cette fois, alors ?\"* 😏"
+        },
+        "done": true,
+        "done_reason": "stop",
+        "total_duration": 4157553625,
+        "load_duration": 2675120417,
+        "prompt_eval_count": 586,
+        "prompt_eval_cached_count": 0,
+        "prompt_eval_duration": 942904000,
+        "eval_count": 18,
+        "eval_duration": 534030999
+      },
+      "loaded_models": {
+        "models": [
+          {
+            "name": "ministral-3:14b",
+            "model": "ministral-3:14b",
+            "size": 9387104010,
+            "digest": "4760c35aeb9d9e9c6174c2492562c0b999e80a222804fd96b1915ab72bbcdcf7",
+            "details": {
+              "parent_model": "",
+              "format": "gguf",
+              "family": "mistral3",
+              "families": [
+                "mistral3"
+              ],
+              "parameter_size": "13.9B",
+              "quantization_level": "Q4_K_M"
+            },
+            "expires_at": "2026-11-01T14:26:04.062859+01:00",
+            "size_vram": 9387104010,
+            "context_length": 8192
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "model": "ministral-3:14b",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Un viewer dit : encore mort au même boss. Réponds avec une seule courte phrase complice, sans inventer le jeu ni le nombre de tentatives."
+          }
+        ],
+        "stream": false,
+        "think": false,
+        "keep_alive": "2m",
+        "options": {
+          "temperature": 0.3,
+          "seed": 42,
+          "num_ctx": 8192,
+          "num_predict": 128
+        }
+      },
+      "seconds": 0.5702070000115782,
+      "response": {
+        "model": "ministral-3:14b",
+        "created_at": "2026-11-01T13:24:04.641259Z",
+        "message": {
+          "role": "assistant",
+          "content": "*\"On va lui faire payer en double cette fois, alors ?\"* 😏"
+        },
+        "done": true,
+        "done_reason": "stop",
+        "total_duration": 567798083,
+        "load_duration": 3548375,
+        "prompt_eval_count": 586,
+        "prompt_eval_cached_count": 585,
+        "prompt_eval_duration": 31670000,
+        "eval_count": 18,
+        "eval_duration": 529866999
+      },
+      "loaded_models": {
+        "models": [
+          {
+            "name": "ministral-3:14b",
+            "model": "ministral-3:14b",
+            "size": 9387104010,
+            "digest": "4760c35aeb9d9e9c6174c2492562c0b999e80a222804fd96b1915ab72bbcdcf7",
+            "details": {
+              "parent_model": "",
+              "format": "gguf",
+              "family": "mistral3",
+              "families": [
+                "mistral3"
+              ],
+              "parameter_size": "13.9B",
+              "quantization_level": "Q4_K_M"
+            },
+            "expires_at": "2026-11-01T14:26:04.641327+01:00",
+            "size_vram": 9387104010,
+            "context_length": 8192
+          }
+        ]
+      }
+    }
+  ],
+  "parameter_experiment": [
+    {
+      "request": {
+        "model": "ministral-3:14b",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Explique en trois phrases comment un bot Twitch peut mémoriser les préférences déclarées sans inventer de faits."
+          }
+        ],
+        "stream": false,
+        "think": false,
+        "options": {
+          "temperature": 0.3,
+          "seed": 42,
+          "num_ctx": 8192,
+          "num_predict": 16
+        }
+      },
+      "seconds": 4.279646042035893,
+      "response": {
+        "model": "ministral-3:14b",
+        "created_at": "2026-11-01T13:27:02.455115Z",
+        "message": {
+          "role": "assistant",
+          "content": "1. **Stockage sécurisé des données** : Un bot Twitch"
+        },
+        "done": true,
+        "done_reason": "length",
+        "total_duration": 4259304417,
+        "load_duration": 2822273458,
+        "prompt_eval_count": 579,
+        "prompt_eval_cached_count": 0,
+        "prompt_eval_duration": 949479000,
+        "eval_count": 16,
+        "eval_duration": 465711000
+      }
+    },
+    {
+      "request": {
+        "model": "ministral-3:14b",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Explique en trois phrases comment un bot Twitch peut mémoriser les préférences déclarées sans inventer de faits."
+          }
+        ],
+        "stream": false,
+        "think": false,
+        "options": {
+          "temperature": 0.3,
+          "seed": 42,
+          "num_ctx": 8192,
+          "num_predict": 128
+        }
+      },
+      "seconds": 3.977100250078365,
+      "response": {
+        "model": "ministral-3:14b",
+        "created_at": "2026-11-01T13:27:06.445518Z",
+        "message": {
+          "role": "assistant",
+          "content": "1. **Stockage sécurisé des données** : Un bot Twitch peut enregistrer les préférences déclarées par les utilisateurs (comme leurs commandes, paramètres ou choix explicites) dans une base de données dédiée, en associant chaque information à un identifiant unique (ex. : nom d’utilisateur ou ID Twitch), sans jamais en déduire ou inventer des données non communiquées.\n\n2. **Validation explicite** : Pour éviter toute interprétation erronée, le bot ne retient que les informations **directement confirmées** par l’utilisateur (ex. : via des commandes comme"
+        },
+        "done": true,
+        "done_reason": "length",
+        "total_duration": 3973750375,
+        "load_duration": 1068958,
+        "prompt_eval_count": 579,
+        "prompt_eval_cached_count": 578,
+        "prompt_eval_duration": 31899000,
+        "eval_count": 128,
+        "eval_duration": 3938293000
+      }
+    }
+  ]
+}

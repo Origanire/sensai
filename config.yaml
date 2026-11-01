@@ -1,5 +1,5 @@
 # ollama pull <model>
-model: qwen3:14b
+model: ministral-3:14b
 
 ollama_url: http://localhost:11434
 
@@ -9,7 +9,7 @@ think: false
 context_window: 8192
 
 # 0 = très déterministe / répétitif, 1 = très créatif / aléatoire
-temperature: 0.7
+temperature: 0.3
 
 # Modèle d'embeddings (RAG). bge-m3 est multilingue : sur la FAQ de test, il
 # retrouve la bonne section 7 fois sur 7, contre 3 sur 7 pour

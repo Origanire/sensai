@@ -1,5 +1,7 @@
 # SENSAI
 
+Dossier de soutenance actualisé : [réponses aux retours, traçabilité, alternatives et captures de secours](doc/defense.md).
+
 Assistant IA construit de zéro (sans framework LLM), qui parle en local à un modèle via l'API HTTP d'[Ollama](https://ollama.com).
 
 **Cas d'usage :** l'assistant d'un streamer Twitch. Dans le chat, Sensai répond
@@ -15,6 +17,25 @@ Pour comprendre et tester chaque fonctionnalité pas à pas :
 [`doc/compte_rendu.md`](doc/compte_rendu.md).
 
 ## Dashboard local du bot
+
+Le contexte Twitch est synchronisé automatiquement chaque minute lorsque le
+dashboard est ouvert ou que le bot fonctionne : titre, catégorie déclarée, bio
+de la chaîne, tags, langue et statut en ligne. Dans **Contexte**, le dashboard
+affiche les données et l'heure de dernière vérification. La table
+`twitch_context` de `data/channels/<chaîne>/viewers.db` conserve uniquement la
+dernière version, séparément de la fiche manuelle et de la mémoire des viewers.
+Une modification Twitch remplace les anciennes valeurs à la prochaine lecture.
+La bio complète les connaissances de Lumi ; elle ne réécrit pas les réponses
+confirmées du questionnaire. Le jeu d'un live ne devient pas un jeu préféré.
+
+La catégorie Twitch récente prime sur le sujet manuel pour les réponses du bot,
+les recherches et les essais privés. Le sujet manuel reste utilisé en simulation
+locale (`--local`). En cas d'échec, la dernière vérification reste datée ; après
+trois minutes, le bot ne la considère plus comme l'état actuel. Hors ligne, le
+dernier jeu et le dernier titre ne sont pas présentés comme un live en cours.
+Le premier chargement est asynchrone : attendre la vérification affichée avant
+de tester. Les métadonnées n'indiquent pas ce qui se passe à l'écran et dépendent
+de ce que le streamer a déclaré sur Twitch.
 
 Sur macOS ou Linux, après l'installation des dépendances et la connexion du compte
 Twitch dédié, ouvre Ollama puis lance depuis la racine du projet :
@@ -57,9 +78,11 @@ suit la [documentation Twitch](https://dev.twitch.tv/docs/authentication/refresh
 
 ### Personnalité, modèle et longueur Twitch
 
-Modèle actif par défaut : **Qwen3 14B**, environ 9,3 Go à télécharger, testé sur
-un Mac de 24 Go de RAM. Contexte de 8 192 tokens, `think: false` pour des réponses
-directes. `.env` peut surcharger le choix avec `SENSAI_MODEL`.
+Modèle actif par défaut : **Ministral 3 14B**, environ 9,1 Go à télécharger,
+vérifié en conversation et routage sur un Mac de 24 Go de RAM. Contexte de
+8 192 tokens, température de 0,3 et `think: false` pour des réponses directes.
+`.env` peut surcharger le choix avec `SENSAI_MODEL` ; après modification,
+redémarre le dashboard et le bot pour appliquer le modèle partout.
 [Comparaison locale des modèles](doc/evaluations/social-2026-10-16/README.md).
 
 Le profil social de Lumi est défini dans `prompts/persona.txt` : réactions adaptées
@@ -174,7 +197,7 @@ curl -fsSL https://ollama.com/install.sh | sh
 ### 2. Télécharger les modèles utilisés par le projet
 
 ```bash
-ollama pull qwen3:14b  # modèle de conversation (chat, outils, routage)
+ollama pull ministral-3:14b  # modèle de conversation (chat, outils, routage)
 ollama pull bge-m3     # modèle d'embeddings multilingue (RAG)
 ```
 
@@ -713,3 +736,37 @@ L’option **Contexte → Mémoire des viewers → Retenir automatiquement les p
 Trois catégories maximum sont enregistrées par identifiant Twitch dans `viewer_auto_facts`, dans la base de la chaîne. Une nouvelle déclaration dans la même catégorie remplace la précédente ; un doublon réactualise sa date. Les préférences de plus de 90 jours ne sont plus injectées dans les réponses. Les faits ajoutés manuellement restent séparés. L’extraction ne reçoit ni paroles du live, ni essais privés, ni messages du compte bot. Aucune annonce automatique n’est publiée dans le chat ; le journal du dashboard indique un nouvel apprentissage sans exposer son contenu.
 
 Désactiver l’option arrête les nouvelles extractions, sans supprimer les souvenirs existants. Cette classification est prudente mais imparfaite : ironie, formulations ambiguës et préférences multiples peuvent être ignorées ou mal classées.
+
+### Contextes du chat et RAG de chaîne
+
+Le chat utilise deux espaces distincts :
+
+- **Mémoire de l’interlocuteur** : faits manuels, préférences de jeu déclarées,
+  résumé et derniers échanges, associés à son identifiant Twitch dans la base
+  de la chaîne. Les préférences automatiques expirent après 90 jours. Seule la
+  mémoire du compte qui pose la question est chargée ; elle ne devient pas une FAQ.
+- **Contexte partagé** : sujet actuel du live, messages publics temporaires et
+  connaissances confirmées dans la FAQ et la fiche du streamer. Le rôle streamer
+  est déterminé par le login Twitch de la chaîne, pas par le pseudo affiché ou une
+  affirmation dans un message. La voix reste non authentifiée.
+
+Pour une question classée « documents », `src/core/channel_rag.py` recherche les
+passages de la FAQ et de la fiche de **cette chaîne**. Une correspondance par mots
+est utilisée en premier ; sans correspondance, la recherche utilise les embeddings
+Ollama (`embedding_model`, avec les réglages `rag.top_k` et `rag.min_score`). Les
+passages portent leur source et sont transmis avec la mémoire du viewer pour
+produire la réponse. En absence de source pertinente, le bot est invité à signaler
+le manque et à demander une précision. Les limites et l’ambiance confirmées restent
+présentes même hors des questions FAQ.
+
+Modifier la FAQ ou la fiche dans le dashboard invalide l’index en mémoire à la
+prochaine recherche. Aucun service vectoriel externe ni ingestion manuelle n’est
+nécessaire pour ces deux sources. Le RAG documentaire global du CLI reste séparé :
+ses fichiers ne sont pas automatiquement publiés dans le contexte Twitch.
+L’essai du dashboard utilise le même RAG de chaîne, sans mémoire de viewer.
+
+Le routeur reçoit les quatre derniers messages de l’interlocuteur pour comprendre
+les questions de suivi. La génération reçoit au plus douze messages récents ; les
+échanges plus anciens sont résumés. La qualité de compréhension dépend toujours du
+modèle Ollama : les tests automatisés vérifient le passage des contextes et
+l’isolation des données, sans garantir les réponses d’un modèle réel.

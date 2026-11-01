@@ -12,7 +12,10 @@ from src.tools.twitch_chat import messages
 
 
 @pytest.fixture
-def controller(tmp_path):
+def controller(tmp_path, monkeypatch):
+    # Aucune lecture réseau en arrière-plan dans les tests du dashboard.
+    monkeypatch.setattr('src.dashboard.TwitchContext.status', lambda self, channel:
+                        {'data': None, 'fresh': False, 'syncing': False, 'error': None})
     (tmp_path / 'config').mkdir()
     (tmp_path / 'config/chat_agent.yaml').write_text('channel: exampletv\ntrigger: "@examplebot"\nbot_name: ExampleBot\ncommand_prefix: "!"\n')
     (tmp_path / 'config.yaml').write_text('model: llama3.2\nollama_url: http://localhost:11434\n')
@@ -106,7 +109,7 @@ def test_private_preview_has_no_persistence(controller):
     before = sorted(str(p) for p in controller.root.rglob('*'))
     with patch('src.dashboard.OllamaClient') as client:
         client.return_value.chat_silent.return_value = 'Bienvenue sur le live !'
-        result = controller.preview({'message': 'Salut', 'settings': {'stream_topic': 'Coopération'}})
+        result = controller.preview({'message': 'Salut', 'settings': {'stream_context': 'Coopération'}})
         prompt = client.return_value.chat_silent.call_args.args[0]
         assert 'Coopération' in prompt[0]['content']
     assert result['reply'] == 'Bienvenue sur le live !'

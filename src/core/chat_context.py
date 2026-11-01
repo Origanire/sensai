@@ -9,18 +9,19 @@ class RecentChat:
         self.messages = deque(maxlen=max_messages)
         self.max_age = max_age
 
-    def add(self, author, text, guardrails, now=None):
+    def add(self, author, text, guardrails, now=None, is_streamer=False):
         now = time.monotonic() if now is None else now
         verdict = guardrails.check_input(text)
         if verdict.allowed and not text.startswith('!'):
             name = guardrails.check_output(author).text[:30]
-            self.messages.append((now, name, verdict.text[:300]))
+            self.messages.append((now, name, verdict.text[:300], is_streamer))
 
     def snapshot(self, now=None):
         now = time.monotonic() if now is None else now
         while self.messages and now - self.messages[0][0] > self.max_age:
             self.messages.popleft()
-        return [{'viewer': author, 'message': text} for _, author, text in self.messages]
+        return [{'viewer': author, 'message': text, 'role': 'streamer' if is_streamer else 'participant'}
+                for _, author, text, is_streamer in self.messages]
 
 
 def context_message(recent):

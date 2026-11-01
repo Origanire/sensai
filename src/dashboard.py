@@ -24,10 +24,11 @@ import yaml
 
 from src.core.bot_settings import ROOT, load_bot_settings, public_settings, save_bot_settings, validate_settings, bot_persona, channel_settings
 from src.core.bot_runtime import bot_is_running
+from src.core.twitch_context import TwitchContext, live_fact_reply
 from src.core.guardrails import load_guardrails
 from src.core.ollama_client import OllamaClient
 from src.core.prompts import load_prompt
-from src.core.channel_knowledge import load_faq, save_faq, faq_prompt, memory_status, load_profile, save_profile, PROFILE_QUESTIONS
+from src.core.channel_knowledge import load_faq, save_faq, channel_guidance, memory_status, load_profile, save_profile, PROFILE_QUESTIONS
 from src.core.chat_text import fit_chat_text, PING_REPLY
 from src.agents.router import route, explicit_search
 from src.tools.web_search import ask_internet, load_internet_settings
@@ -47,6 +48,7 @@ class BotController:
 
     def __init__(self, root=ROOT):
         self.root = Path(root)
+        self.twitch_context = TwitchContext(self.root)
         self.lock = threading.RLock()
         self.preview_lock = threading.Lock()
         self.check_lock = threading.Lock()
@@ -303,6 +305,7 @@ class BotController:
         with self.lock:
             settings = public_settings(load_bot_settings(self.root))
             return {"phase": self.phase, "active_channel": self.active_channel, "settings": settings,
+                    "live_context": self.twitch_context.status(settings["channel"]),
                     "audio": {"stage": self.audio_stage if self.phase in {"starting", "running"} else "stopped", "dependencies_ready": dependencies_ready()},
                     "memory": memory_status(settings["channel"], self.root),
                     "health": self.health, "auth": dict(self.auth), "metrics": self.metrics_snapshot(), "events": list(self.events),
@@ -334,6 +337,7 @@ class BotController:
             if not verdict.allowed:
                 return {"reply": verdict.message, "seconds": 0, "blocked": True}
             client = OllamaClient(self.model_config())
+            client.capture_requests = True
             started = time.monotonic()
             # On retire seulement la mention du bot configurée pour cette chaîne.
             from src.agents.chat_agent import match_trigger
@@ -341,13 +345,21 @@ class BotController:
             query = addressed if addressed is not None else verdict.text
             if not query:
                 return {"reply": PING_REPLY, "seconds": 0, "blocked": False, "route": "chat"}
+            settings = self.twitch_context.apply(settings)
+            factual = live_fact_reply(query, settings)
+            if factual is not None:
+                return {"reply": fit_chat_text(guardrails.check_output(factual).text, 500 - len("@Viewer ")),
+                        "seconds": round(time.monotonic()-started, 1), "blocked": False, "route": "facts"}
             search_request = explicit_search(query)
             if search_request is not None:
                 query = search_request
                 if not query:
                     raise ValueError("Usage : !search ta question")
             choice = "web" if search_request is not None else route(query, client, topic=settings["stream_topic"])
-            persona = bot_persona(load_prompt("persona"), settings) + faq_prompt(settings, self.root)
+            persona = bot_persona(load_prompt("persona"), settings) + channel_guidance(settings, self.root)
+            if choice == "docs":
+                from src.core.channel_rag import ChannelRAG
+                persona += ChannelRAG(self.root).context(settings, query, client)
             if choice == "web":
                 response = ask_internet(query, client, load_internet_settings(self.model_config())["max_results"], persona=persona, topic=settings["stream_topic"])
             else:
@@ -357,7 +369,9 @@ class BotController:
                 ])
             if not response or not response.strip():
                 raise DashboardError("Le modèle n'a pas répondu. Vérifie Ollama et réessaie.")
-            return {"reply": fit_chat_text(guardrails.check_output(response).text, 500 - len("@Viewer ")), "seconds": round(time.monotonic()-started, 1), "blocked": False, "route": "web" if choice == "web" else "chat"}
+            traces = getattr(client, "sent_requests", [])
+            return {"reply": fit_chat_text(guardrails.check_output(response).text, 500 - len("@Viewer ")), "seconds": round(time.monotonic()-started, 1), "blocked": False, "route": "web" if choice == "web" else "chat",
+                    "model_requests": traces if isinstance(traces, list) else []}
         finally:
             self.preview_lock.release()
 

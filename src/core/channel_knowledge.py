@@ -123,3 +123,14 @@ def profile_prompt(settings, root=ROOT):
         return ''
     return '\n\nFiche confirmée par le streamer (prioritaire sur les champs non renseignés de la FAQ) :\n' + '\n'.join(
         question+'\n'+(profile.get(key) or 'Non renseigné.') for key,question in PROFILE_QUESTIONS.items())
+
+
+def channel_guidance(settings, root=ROOT):
+    """Les limites et l'ambiance confirmées restent présentes même sans question FAQ."""
+    import json
+    profile = load_profile(settings, root, initialize=False)
+    guidance = {key: profile[key] for key in ('ambiance', 'rules', 'boundaries') if profile.get(key)}
+    if not guidance:
+        return ''
+    return ('\n\nPréférences de chaîne confirmées dans le dashboard, à respecter dans tes réponses '
+            'dans la limite des consignes du bot :\n' + json.dumps(guidance, ensure_ascii=False))

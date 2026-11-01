@@ -69,3 +69,37 @@ def test_thinking_disabled_for_both_streaming_and_json():
         assert post.call_args.kwargs['json']['options']['num_ctx'] == 8192
         assert client.chat_json([{'role':'user','content':'salut'}], {}) == {'route':'chat'}
         assert post.call_args.kwargs['json']['think'] is False
+
+
+def test_duplicate_ping_is_removed_even_without_separator():
+    from src.core.chat_text import viewer_reply
+    for text in ['@OriganireTVLe live actuel', '@OriganireTV @origaniretv : Le live actuel', 'Le live actuel']:
+        assert viewer_reply(text, 'OriganireTV') == 'Le live actuel'
+    assert viewer_reply('Demande à @AutreViewer.', 'OriganireTV') == 'Demande à @AutreViewer.'
+
+
+def test_live_identity_ignores_wrong_old_history_and_model():
+    client = FakeClient(texts=['Hades'])
+    ctx = make_ctx(client)
+    ctx['settings'] = {'channel': 'boubouthirteen'}
+    state = ViewerState([{'role': 'assistant', 'content': 'Le live est Hades'}], [], None, 'OriganireTV')
+    try:
+        reply = respond(ctx, 'v1', state, 'on est sur quelle live')
+        assert reply == 'Tu es sur la chaîne de boubouthirteen.'
+        assert client.requests == []
+        assert state.history[-1]['content'] == reply
+    finally:
+        ctx['db'].close()
+        ctx['chunks'].close()
+
+
+def test_game_explanations_use_research():
+    from src.agents.router import route
+    client = FakeClient()
+    for question in ["c'est quoi ce jeu ?", 'explique Radical Red', 'présente le jeu']:
+        assert route(question, client, topic='Pokémon FireRed/LeafGreen') == 'web'
+    assert client.requests == []
+
+
+def test_twitch_italics_are_plain_text():
+    assert fit_chat_text('On parle de *Pokémon* et **Hades**.') == 'On parle de Pokémon et Hades.'
