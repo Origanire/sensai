@@ -1,7 +1,5 @@
 # SENSAI
 
-Dossier de soutenance actualisé : [réponses aux retours, traçabilité, alternatives et captures de secours](doc/defense.md).
-
 Assistant IA construit de zéro (sans framework LLM), qui parle en local à un modèle via l'API HTTP d'[Ollama](https://ollama.com).
 
 **Cas d'usage :** l'assistant d'un streamer Twitch. Dans le chat, Sensai répond
@@ -12,7 +10,8 @@ le compte-rendu du stream, les exports, la veille web planifiée et des outils
 MCP.
 
 Projet réalisé dans le cadre du cursus Epitech (PGE3 — G-AIA-500-MAR-5-1),
-en équipe de cinq, avec Milo Bousquet comme lead technique.
+en équipe de cinq, avec Milo Bousquet comme lead technique. Le
+[dossier de soutenance](doc/defense.md) détaille les choix, la traçabilité et les alternatives.
 
 Pour comprendre et tester chaque fonctionnalité pas à pas :
 [`doc/compte_rendu.md`](doc/compte_rendu.md).
