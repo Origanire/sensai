@@ -11,7 +11,8 @@ manipulation et masque les données personnelles. Côté streamer, la CLI pilote
 le compte-rendu du stream, les exports, la veille web planifiée et des outils
 MCP.
 
-Projet réalisé dans le cadre du cursus Epitech (PGE3 — G-AIA-500-MAR-5-1).
+Projet réalisé dans le cadre du cursus Epitech (PGE3 — G-AIA-500-MAR-5-1),
+en équipe de cinq, avec Milo Bousquet comme lead technique.
 
 Pour comprendre et tester chaque fonctionnalité pas à pas :
 [`doc/compte_rendu.md`](doc/compte_rendu.md).
