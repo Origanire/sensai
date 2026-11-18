@@ -1,5 +1,9 @@
 # SENSAI
 
+[![Tests](https://github.com/Origanire/sensai/actions/workflows/tests.yml/badge.svg)](https://github.com/Origanire/sensai/actions/workflows/tests.yml)
+
+> **English summary.** Local AI assistant for a Twitch streamer, built without any LLM framework on top of Ollama: per-viewer memory, RAG over the channel FAQ, a router to web search, guardrails tested against 53 prompt-injection attacks, PII masking and an MCP server. Epitech project, team of five, Milo Bousquet as tech lead. Documentation below is in French.
+
 Assistant IA construit de zéro (sans framework LLM), qui parle en local à un modèle via l'API HTTP d'[Ollama](https://ollama.com).
 
 **Cas d'usage :** l'assistant d'un streamer Twitch. Dans le chat, Sensai répond
